@@ -117,7 +117,7 @@ and pdffonts (PDF font analyzer).
 %setup -q -n %{name}-%{version}/poppler
 
 %build
-%configure \
+autoreconf -vfi %configure \
   --enable-shared \
   --disable-static \
   --enable-xpdf-headers \
