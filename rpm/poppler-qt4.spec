@@ -13,7 +13,7 @@
 %define poppler_qt4_soname 4
 
 Name:           %{poppler_name}
-Version:        0.22.3
+Version:        0.24.0
 Release:        1
 License:        GPLv2
 %if 0%{?build_with_qt4}
