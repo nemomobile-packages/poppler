@@ -78,6 +78,37 @@
 #  define xrefCondLocker(X)
 #endif
 
+//------------------------------------------------------------------------
+// ObjectStream
+//------------------------------------------------------------------------
+
+class ObjectStream {
+public:
+
+  // Create an object stream, using object number <objStrNum>,
+  // generation 0.
+  ObjectStream(XRef *xref, int objStrNumA, int recursion = 0);
+
+  GBool isOk() { return ok; }
+
+  ~ObjectStream();
+
+  // Return the object number of this object stream.
+  int getObjStrNum() { return objStrNum; }
+
+  // Get the <objIdx>th object from this stream, which should be
+  // object number <objNum>, generation 0.
+  Object *getObject(int objIdx, int objNum, Object *obj);
+
+private:
+
+  int objStrNum;		// object number of the object stream
+  int nObjects;			// number of objects in the stream
+  Object *objs;			// the objects (length = nObjects)
+  int *objNums;			// the object numbers (length = nObjects)
+  GBool ok;
+};
+
 class ObjectStreamKey : public PopplerCacheKey
 {
   public:
@@ -112,6 +143,7 @@ class ObjectStreamItem : public PopplerCacheItem
 ObjectStream::ObjectStream(XRef *xref, int objStrNumA, int recursion) {
   Stream *str;
   Parser *parser;
+  Goffset *offsets;
   Object objStr, obj1, obj2;
   Goffset first;
   int i;
@@ -120,7 +152,6 @@ ObjectStream::ObjectStream(XRef *xref, int objStrNumA, int recursion) {
   nObjects = 0;
   objs = NULL;
   objNums = NULL;
-  offsets = NULL;
   ok = gFalse;
 
   if (!xref->fetch(objStrNum, 0, &objStr, recursion)->isStream()) {
@@ -146,7 +177,6 @@ ObjectStream::ObjectStream(XRef *xref, int objStrNumA, int recursion) {
     first = obj1.getInt();
   else
     first = obj1.getInt64();
-  firstOffset = objStr.getStream()->getBaseStream()->getStart() + first;
   obj1.free();
   if (first < 0) {
     goto err1;
@@ -175,7 +205,7 @@ ObjectStream::ObjectStream(XRef *xref, int objStrNumA, int recursion) {
       obj1.free();
       obj2.free();
       delete parser;
-//      gfree(offsets);
+      gfree(offsets);
       goto err1;
     }
     objNums[i] = obj1.getInt();
@@ -188,7 +218,7 @@ ObjectStream::ObjectStream(XRef *xref, int objStrNumA, int recursion) {
     if (objNums[i] < 0 || offsets[i] < 0 ||
 	(i > 0 && offsets[i] < offsets[i-1])) {
       delete parser;
-//      gfree(offsets);
+      gfree(offsets);
       goto err1;
     }
   }
@@ -217,7 +247,7 @@ ObjectStream::ObjectStream(XRef *xref, int objStrNumA, int recursion) {
     delete parser;
   }
 
-//  gfree(offsets);
+  gfree(offsets);
   ok = gTrue;
 
  err1:
@@ -234,7 +264,6 @@ ObjectStream::~ObjectStream() {
     delete[] objs;
   }
   gfree(objNums);
-  gfree(offsets);
 }
 
 Object *ObjectStream::getObject(int objIdx, int objNum, Object *obj) {

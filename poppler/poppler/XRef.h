@@ -48,42 +48,6 @@ class Stream;
 class Parser;
 class PopplerCache;
 
-
-//------------------------------------------------------------------------
-// ObjectStream
-//------------------------------------------------------------------------
-
-class ObjectStream {
-public:
-
-  // Create an object stream, using object number <objStrNum>,
-  // generation 0.
-  ObjectStream(XRef *xref, int objStrNumA);
-
-  GBool isOk() { return ok; }
-
-  ~ObjectStream();
-
-  // Return the object number of this object stream.
-  int getObjStrNum() { return objStrNum; }
-
-  // Get the <objIdx>th object from this stream, which should be
-  // object number <objNum>, generation 0.
-  Object *getObject(int objIdx, int objNum, Object *obj);
-
-  int *getOffsets() { return offsets; }
-  Guint getFirstOffset() { return firstOffset; }
-
-private:
-
-  int objStrNum;		// object number of the object stream
-  int nObjects;			// number of objects in the stream
-  Object *objs;			// the objects (length = nObjects)
-  int *objNums;			// the object numbers (length = nObjects)
-  GBool ok;
-  int *offsets;			// the object offsets (length = nObjects)
-  Guint firstOffset;
-};
 //------------------------------------------------------------------------
 // XRef
 //------------------------------------------------------------------------
@@ -210,7 +174,6 @@ public:
   // Direct access.
   XRefEntry *getEntry(int i, GBool complainIfMissing = gTrue);
   Object *getTrailerDict() { return &trailerDict; }
-  ObjectStream *getObjStr() { return objStr; }
 
   // Write access
   void setModifiedObject(Object* o, Ref r);
@@ -243,7 +206,6 @@ private:
 				//   damaged files
   int streamEndsLen;		// number of valid entries in streamEnds
   PopplerCache *objStrs;	// cached object streams
-  ObjectStream *objStr;         // cached object stream
   GBool encrypted;		// true if file is encrypted
   int encRevision;		
   int encVersion;		// encryption algorithm
