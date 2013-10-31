@@ -23,11 +23,7 @@ Summary:        PDF rendering library
 %endif
 Url:            http://poppler.freedesktop.org/
 Group:          System/Libraries
-%if 0%{?build_with_qt5}
-Source0:        http://poppler.freedesktop.org/poppler-%{version}.tar.gz
-%else
-Source0:        http://poppler.freedesktop.org/poppler-qt5-%{version}.tar.gz
-%endif
+Source0:        http://poppler.freedesktop.org/%{poppler_name}-%{version}.tar.gz
 BuildRequires:  automake
 BuildRequires:  gcc-c++
 BuildRequires:  libjpeg-devel
