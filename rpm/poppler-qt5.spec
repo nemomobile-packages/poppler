@@ -37,7 +37,7 @@ BuildRequires:  pkgconfig(libxml-2.0)
 BuildRequires:  zlib-devel
 %if 0%{?build_with_qt5}
 Obsoletes:      poppler-qt
-BuildRequires:  pkgconfig(QtCore)
+BuildRequires:  pkgconfig(Qt5Core)
 Requires:       poppler = %{version}
 %endif
 
