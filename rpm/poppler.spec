@@ -10,10 +10,7 @@ Name:           %{poppler_name}
 Version:        0.24.0
 Release:        1
 License:        GPLv2
-#%if 0%{?build_with_qt5}
-#%else
 Summary:        PDF rendering library
-#%endif
 Url:            http://poppler.freedesktop.org/
 Group:          System/Libraries
 Source0:        http://poppler.freedesktop.org/%{poppler_name}-%{version}.tar.gz
@@ -29,13 +26,11 @@ BuildRequires:  pkgconfig(libcurl)
 BuildRequires:  pkgconfig(libpng)
 BuildRequires:  pkgconfig(libxml-2.0)
 BuildRequires:  zlib-devel
-#%if 0%{?build_with_qt5}
 BuildRequires:  pkgconfig(Qt5Core)
 BuildRequires:  pkgconfig(Qt5Gui)
 BuildRequires:  pkgconfig(Qt5Xml)
 BuildRequires:  pkgconfig(Qt5Widgets)
 BuildRequires:  pkgconfig(Qt5Test)
-#%endif
 
 %description
 Poppler is a PDF rendering library based on xpdf PDF viewer.
@@ -160,8 +155,6 @@ find . -type f -o -type l | grep -v qt | xargs rm -v
 
 %files qt5-devel
 %defattr(-,root,root,-)
-# work a round for error causing find-docs.sh meego rpm tool
-%exclude /documentation.list
 %{_libdir}/libpoppler-qt5.so
 %{_libdir}/pkgconfig/poppler-qt5.pc
 %{_includedir}/poppler/qt5/
