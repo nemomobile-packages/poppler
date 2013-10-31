@@ -49,7 +49,7 @@ using the Qt 5 interface to Poppler.
 %package qt5-devel
 Summary:        PDF rendering library (Qt 5 interface development files)
 Group:          Development/Libraries
-Requires:       libqt-devel
+Requires:       qt5-qtcore-devel qt5-qtgui-devel qt5-qttest-devel qt5-qtwidgets-devel qt5-qtxml-devel
 Requires:       poppler-devel = %{version}
 Requires:       poppler-qt5 = %{version}
 Obsoletes:      poppler-qt-devel
