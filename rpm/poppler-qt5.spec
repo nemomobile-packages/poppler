@@ -25,6 +25,7 @@ Url:            http://poppler.freedesktop.org/
 Group:          System/Libraries
 Source0:        http://poppler.freedesktop.org/%{poppler_name}-%{version}.tar.gz
 BuildRequires:  automake
+BuildRequires:  gettext
 BuildRequires:  gcc-c++
 BuildRequires:  libjpeg-devel
 BuildRequires:  libtool
