@@ -1,19 +1,17 @@
 # spec file for package poppler
 
-%define poppler_name poppler
-
 %define poppler_soname 43
 %define poppler_glib_soname 8
 %define poppler_qt5_soname 1
 
-Name:           %{poppler_name}
+Name:           poppler
 Version:        0.24.0
 Release:        1
 License:        GPLv2
 Summary:        PDF rendering library
 Url:            http://poppler.freedesktop.org/
 Group:          System/Libraries
-Source0:        http://poppler.freedesktop.org/%{poppler_name}-%{version}.tar.gz
+Source0:        http://poppler.freedesktop.org/%{name}-%{version}.tar.gz
 BuildRequires:  automake
 BuildRequires:  gettext
 BuildRequires:  gcc-c++
