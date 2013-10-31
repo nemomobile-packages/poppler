@@ -170,7 +170,6 @@ find . -type f -o -type l | grep -v qt | xargs rm -v
 %{_libdir}/pkgconfig/poppler-splash.pc
 %{_libdir}/libpoppler.so
 %{_includedir}/poppler/
-%{_datadir}/gtk-doc/html/poppler
 
 %files glib
 %defattr(-,root,root,-)
