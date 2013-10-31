@@ -122,7 +122,7 @@ autoreconf -vfi %configure \
   --enable-splash-output \
   --enable-cairo-output \
   --enable-poppler-glib \
-  --disable-poppler-cpp \
+  --enable-poppler-cpp \
   --disable-gtk-test \
   --enable-utils \
   --enable-cms \
