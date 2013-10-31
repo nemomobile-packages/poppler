@@ -1,30 +1,24 @@
 # spec file for package poppler
 
-%define build_with_qt4 0
-
-%if 0%{?build_with_qt4}
-%define poppler_name poppler-qt4
-%else
 %define poppler_name poppler
-%endif
 
 %define poppler_soname 43
 %define poppler_glib_soname 8
-%define poppler_qt4_soname 4
+%define poppler_qt5_soname 1
 
 Name:           %{poppler_name}
 Version:        0.24.0
 Release:        1
 License:        GPLv2
-%if 0%{?build_with_qt4}
-Summary:        PDF rendering library (Qt 4 based shared library)
-%else
+#%if 0%{?build_with_qt5}
+#%else
 Summary:        PDF rendering library
-%endif
+#%endif
 Url:            http://poppler.freedesktop.org/
 Group:          System/Libraries
-Source0:        http://poppler.freedesktop.org/poppler-%{version}.tar.gz
+Source0:        http://poppler.freedesktop.org/%{poppler_name}-%{version}.tar.gz
 BuildRequires:  automake
+BuildRequires:  gettext
 BuildRequires:  gcc-c++
 BuildRequires:  libjpeg-devel
 BuildRequires:  libtool
@@ -35,36 +29,43 @@ BuildRequires:  pkgconfig(libcurl)
 BuildRequires:  pkgconfig(libpng)
 BuildRequires:  pkgconfig(libxml-2.0)
 BuildRequires:  zlib-devel
-%if 0%{?build_with_qt4}
-Obsoletes:      poppler-qt
-BuildRequires:  pkgconfig(QtCore)
-Requires:       poppler = %{version}
-%endif
+#%if 0%{?build_with_qt5}
+BuildRequires:  pkgconfig(Qt5Core)
+BuildRequires:  pkgconfig(Qt5Gui)
+BuildRequires:  pkgconfig(Qt5Xml)
+BuildRequires:  pkgconfig(Qt5Widgets)
+BuildRequires:  pkgconfig(Qt5Test)
+#%endif
 
 %description
 Poppler is a PDF rendering library based on xpdf PDF viewer.
 
-%if 0%{?build_with_qt4}
-This package provides the Qt 4 based shared library for applications
-using the Qt 4 interface to Poppler.
-%else
 This package contains the shared library.
-%endif
 
-%if 0%{?build_with_qt4}
-%package devel
-Summary:        PDF rendering library (Qt 4 interface development files)
+%package qt5
+Summary:        PDF rendering library (Qt 5 based shared library)
+Requires:       poppler = %{version}
+Obsoletes:      poppler-qt
+
+%description qt5
+Poppler is a PDF rendering library based on xpdf PDF viewer.
+
+This package provides the Qt 5 based shared library for applications
+using the Qt 5 interface to Poppler.
+
+%package qt5-devel
+Summary:        PDF rendering library (Qt 5 interface development files)
 Group:          Development/Libraries
 Requires:       libqt-devel
 Requires:       poppler-devel = %{version}
-Requires:       poppler-qt4 = %{version}
+Requires:       poppler-qt5 = %{version}
 Obsoletes:      poppler-qt-devel
 
-%description devel
+%description qt5-devel
 Poppler is a PDF rendering library based on xpdf PDF viewer.
 
-This package provides a Qt 4 style interface to Poppler.
-%else
+This package provides a Qt 5 style interface to Poppler.
+
 %package devel
 Summary:        PDF rendering library (development files)
 Group:          Development/Libraries
@@ -111,7 +112,6 @@ This package contains pdftops (PDF to PostScript converter), pdfinfo
 (PDF document information extractor), pdfimages (PDF image extractor),
 pdftohtml (PDF to HTML converter), pdftotext (PDF to text converter),
 and pdffonts (PDF font analyzer).
-%endif
 
 %prep
 %setup -q -n %{name}-%{version}/poppler
@@ -133,46 +133,39 @@ autoreconf -vfi %configure \
   --disable-gtk-test \
   --enable-utils \
   --enable-cms \
-%if 0%{?build_with_qt4}
-  --enable-poppler-qt4
-%else
-  --disable-poppler-qt4
-%endif
+  --enable-poppler-qt5
 
 make %{?_smp_mflags}
 
 %install
 %makeinstall
 rm -f %{buildroot}%{_libdir}/*.la
-%if 0%{?build_with_qt4}
+%if 0%{?build_with_qt5}
 cd %{buildroot}
 find . -type f -o -type l | grep -v qt | xargs rm -v
 %endif
 
-%if 0%{?build_with_qt4}
 %post -p /sbin/ldconfig
 %postun -p /sbin/ldconfig
-%else
-%post -p /sbin/ldconfig
-%postun -p /sbin/ldconfig
+
+%post qt5 -p /sbin/ldconfig
+%postun qt5 -p /sbin/ldconfig
 
 %post glib -p /sbin/ldconfig
 %postun glib -p /sbin/ldconfig
-%endif
 
-%if 0%{?build_with_qt4}
-%files
+%files qt5
 %defattr(-,root,root,-)
-%{_libdir}/libpoppler-qt4.so.%{poppler_qt4_soname}*
+%{_libdir}/libpoppler-qt5.so.%{poppler_qt5_soname}*
 
-%files devel
+%files qt5-devel
 %defattr(-,root,root,-)
 # work a round for error causing find-docs.sh meego rpm tool
 %exclude /documentation.list
-%{_libdir}/libpoppler-qt4.so
-%{_libdir}/pkgconfig/poppler-qt4.pc
-%{_includedir}/poppler/qt4/
-%else
+%{_libdir}/libpoppler-qt5.so
+%{_libdir}/pkgconfig/poppler-qt5.pc
+%{_includedir}/poppler/qt5/
+
 %files
 %defattr(-,root,root,-)
 %doc COPYING README
@@ -220,4 +213,3 @@ find . -type f -o -type l | grep -v qt | xargs rm -v
 %{_mandir}/man1/pdfseparate.1.gz
 %{_mandir}/man1/pdftocairo.1.gz
 %{_mandir}/man1/pdfunite.1.gz
-%endif
