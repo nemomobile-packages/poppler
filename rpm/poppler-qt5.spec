@@ -10,7 +10,7 @@
 
 %define poppler_soname 36
 %define poppler_glib_soname 8
-%define poppler_qt5_soname 4
+%define poppler_qt5_soname 1
 
 Name:           %{poppler_name}
 Version:        0.24.0
