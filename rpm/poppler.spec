@@ -1,11 +1,11 @@
 # spec file for package poppler
 
-%define poppler_soname 43
+%define poppler_soname 44
 %define poppler_glib_soname 8
 %define poppler_qt5_soname 1
 
 Name:           poppler
-Version:        0.24.0
+Version:        0.24.5
 Release:        1
 License:        GPLv2
 Summary:        PDF rendering library
