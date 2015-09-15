@@ -21,6 +21,7 @@
 // Copyright (C) 2012 William Bader <williambader@hotmail.com>
 // Copyright (C) 2012 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright (C) 2013 Adrian Johnson <ajohnson@redneon.com>
+// Copyright (C) 2013 Fabio D'Urso <fabiodurso@hotmail.it>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -1495,7 +1496,7 @@ void JBIG2Stream::readSegments() {
 	// arithmetic-coded symbol dictionary segments when numNewSyms
 	// == 0.  Segments like this often occur for blank pages.
 	
-	error(errSyntaxError, curStr->getPos(), "{0:d} extraneous byte{1:s} after segment",
+	error(errSyntaxError, curStr->getPos(), "{0:lld} extraneous byte{1:s} after segment",
 	      segExtraBytes, (segExtraBytes > 1) ? "s" : "");
 	
 	// Burn through the remaining bytes -- inefficient, but
