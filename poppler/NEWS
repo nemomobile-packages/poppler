@@ -1,3 +1,70 @@
+Release 0.24.5
+        core:
+         * Fix crash due to wrong formatting of error message. KDE Bug #328511
+
+Release 0.24.4
+        core:
+         * Fix regression in broken endstream detection. Bug #70854
+         * Catalog: sort entries of NameTrees to make sure lookup works. Bug #26049
+         * Don't infinite loop if reading from GooFile::read fails. Bug #71835
+
+        utils:
+         * pdftotext: Do not close stdout. Bug #71639
+         * pdftotext: Silence warning for may be used uninitialized variable. Bug #71640
+         * pdftotext: Escape the text of the xml headers
+         * Warn the user if he provides a wrong range
+
+        qt4:
+         * Fix typo in xml API. Bug #71643
+
+        qt5:
+         * Fix typo in xml API. Bug #71643
+
+Release 0.24.3
+        core:
+         * PSOutputDev: Fix PFB font embedding. Bug #69717
+         * CairoOutputDev: Do not set an invalid matrix in drawImage(). Bug #70085 
+
+        qt4:
+         * Don't crash if getXRef()->copy() fails
+
+        qt5:
+         * Don't crash if getXRef()->copy() fails
+
+        utils:
+         * pdfseparate: Allow only one %d in the filename. Bug #69434
+        
+Release 0.24.2
+        core:
+         * Windows: Fix CreateFile fails with ERROR_SHARING_VIOLATION. Bug #69597
+
+        utils:
+         * pdfseparate: improve the path building
+         * pdftocairo: check file opening failure in beginDocument()
+        
+Release 0.24.1
+        core:
+         * SplashOutputDev: use getRGBLine images if available. Bug #66928
+         * SplashOutputDev: Don't copy bitmap if we don't need to.
+         * PSOutputDev: Fix regression in -eps -level1sep rendering. Bug #68321
+         * Fix crash in malformed file 1026.asan.0.42.pdf
+         * use copyString instead of strdup where memory is freed with gfree. Bug #67666
+
+        utils:
+         * pdfdetach: don't mention xpdfrc
+         * pdftotext: Fix -bbox with stdin as input. Bug #45163
+         * pdftohtml: Fix jpeg image export. Bug #48270
+         * pdfimages: Fix typos in man page
+
+        glib:
+         * demo: Remove GTK_DISABLE_DEPRECATED compilation flag
+
+        qt4:
+         * Fix small typo in documentation
+
+        qt5:
+         * Fix small typo in documentation
+
 Release 0.24.0
         core:
          * TextOutputDev: Do not draw ligatures more than once when selected. Bug #9001
