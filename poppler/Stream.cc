@@ -14,7 +14,7 @@
 // under GPL version 2 or later
 //
 // Copyright (C) 2005 Jeff Muizelaar <jeff@infidigm.net>
-// Copyright (C) 2006-2010, 2012, 2013 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2006-2010, 2012-2014 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2007 Krzysztof Kowalczyk <kkowalczyk@gmail.com>
 // Copyright (C) 2008 Julien Rebetez <julien@fhtagn.net>
 // Copyright (C) 2009 Carlos Garcia Campos <carlosgc@gnome.org>
@@ -30,6 +30,8 @@
 // Copyright (C) 2013 Adrian Johnson <ajohnson@redneon.com>
 // Copyright (C) 2013 Adam Reichold <adamreichold@myopera.com>
 // Copyright (C) 2013 Pino Toscano <pino@kde.org>
+// Copyright (C) 2015 Suzuki Toshiya <mpsuzuki@hiroshima-u.ac.jp>
+// Copyright (C) 2015 Jason Crain <jason@aquaticape.us>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -59,6 +61,7 @@
 #include "Lexer.h"
 #include "GfxState.h"
 #include "Stream.h"
+#include "XRef.h"
 #include "JBIG2Stream.h"
 #include "Stream-CCITT.h"
 #include "CachedFile.h"
@@ -337,10 +340,13 @@ Stream *Stream::makeFilter(char *name, Stream *str, Object *params, int recursio
     str = new FlateStream(str, pred, columns, colors, bits);
   } else if (!strcmp(name, "JBIG2Decode")) {
     if (params->isDict()) {
-      params->dictLookup("JBIG2Globals", &globals, recursion);
+      XRef *xref = params->getDict()->getXRef();
+      params->dictLookupNF("JBIG2Globals", &obj);
+      obj.fetch(xref, &globals, recursion);
     }
-    str = new JBIG2Stream(str, &globals);
+    str = new JBIG2Stream(str, &globals, &obj);
     globals.free();
+    obj.free();
   } else if (!strcmp(name, "JPXDecode")) {
     str = new JPXStream(str);
   } else if (!strcmp(name, "Crypt")) {
@@ -452,7 +458,7 @@ ImageStream::ImageStream(Stream *strA, int widthA, int nCompsA, int nBitsA) {
 
   nVals = width * nComps;
   inputLineSize = (nVals * nBits + 7) >> 3;
-  if (nBits <= 0 || nVals > INT_MAX / nBits - 7) {
+  if (nBits <= 0 || nVals > INT_MAX / nBits - 7 || width > INT_MAX / nComps) {
     inputLineSize = -1;
   }
   inputLine = (Guchar *)gmallocn_checkoverflow(inputLineSize, sizeof(char));

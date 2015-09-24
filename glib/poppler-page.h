@@ -68,6 +68,8 @@ GList     	      *poppler_page_find_text            (PopplerPage        *page,
 void                   poppler_page_render_to_ps         (PopplerPage        *page,
 							  PopplerPSFile      *ps_file);
 char                  *poppler_page_get_text             (PopplerPage        *page);
+char                  *poppler_page_get_text_for_area    (PopplerPage        *page,
+                                                          PopplerRectangle   *area);
 char                  *poppler_page_get_selected_text    (PopplerPage        *page,
 							  PopplerSelectionStyle style,
 							  PopplerRectangle   *selection);
@@ -99,8 +101,14 @@ void 		      poppler_page_get_crop_box 	 (PopplerPage        *page,
 gboolean               poppler_page_get_text_layout      (PopplerPage        *page,
                                                           PopplerRectangle  **rectangles,
                                                           guint              *n_rectangles);
+gboolean           poppler_page_get_text_layout_for_area (PopplerPage        *page,
+                                                          PopplerRectangle   *area,
+                                                          PopplerRectangle  **rectangles,
+                                                          guint              *n_rectangles);
 GList                 *poppler_page_get_text_attributes  (PopplerPage        *page);
 void                   poppler_page_free_text_attributes (GList              *list);
+GList *        poppler_page_get_text_attributes_for_area (PopplerPage        *page,
+                                                          PopplerRectangle   *area);
 
 /* A rectangle on a page, with coordinates in PDF points. */
 #define POPPLER_TYPE_RECTANGLE             (poppler_rectangle_get_type ())
@@ -126,6 +134,59 @@ GType             poppler_rectangle_get_type (void) G_GNUC_CONST;
 PopplerRectangle *poppler_rectangle_new      (void);
 PopplerRectangle *poppler_rectangle_copy     (PopplerRectangle *rectangle);
 void              poppler_rectangle_free     (PopplerRectangle *rectangle);
+
+/* A point on a page, with coordinates in PDF points. */
+#define POPPLER_TYPE_POINT             (poppler_point_get_type ())
+/**
+ * PopplerPoint:
+ * @x: x coordinate
+ * @y: y coordinate
+ *
+ * A #PopplerPoint is used to describe a location point on a page
+ */
+struct _PopplerPoint
+{
+  gdouble x;
+  gdouble y;
+};
+
+GType             poppler_point_get_type (void) G_GNUC_CONST;
+PopplerPoint     *poppler_point_new      (void);
+PopplerPoint     *poppler_point_copy     (PopplerPoint *point);
+void              poppler_point_free     (PopplerPoint *point);
+
+/* PopplerQuadrilateral */
+
+/* A quadrilateral encompasses a word or group of contiguous words in the
+ * text underlying the annotation. The coordinates for each quadrilateral are
+ * given in the order x1 y1 x2 y2 x3 y3 x4 y4 specifying the quadrilateral’s four
+ *  vertices in counterclockwise order */
+
+#define POPPLER_TYPE_QUADRILATERAL             (poppler_quadrilateral_get_type ())
+/**
+ *  PopplerQuadrilateral:
+ *  @p1: a #PopplerPoint with the first vertex coordinates
+ *  @p2: a #PopplerPoint with the second vertex coordinates
+ *  @p3: a #PopplerPoint with the third vertex coordinates
+ *  @p4: a #PopplerPoint with the fourth vertex coordinates
+ *
+ *  A #PopplerQuadrilateral is used to describe rectangle-like polygon
+ *  with arbitrary inclination on a page.
+ *
+ *  Since: 0.26
+ **/
+struct _PopplerQuadrilateral
+{
+  PopplerPoint p1;
+  PopplerPoint p2;
+  PopplerPoint p3;
+  PopplerPoint p4;
+};
+
+GType                 poppler_quadrilateral_get_type (void) G_GNUC_CONST;
+PopplerQuadrilateral *poppler_quadrilateral_new      (void);
+PopplerQuadrilateral *poppler_quadrilateral_copy     (PopplerQuadrilateral *quad);
+void                 poppler_quadrilateral_free     (PopplerQuadrilateral *quad);
 
 /* A color in RGB */
 #define POPPLER_TYPE_COLOR                 (poppler_color_get_type ())

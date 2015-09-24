@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2009, Pino Toscano <pino@kde.org>
+ * Copyright (C) 2015, Tamas Szekeres <szekerest@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +23,8 @@
 
 #include "FontInfo.h"
 
+#include <algorithm>
+
 using namespace poppler;
 
 class poppler::font_info_private
@@ -37,7 +40,6 @@ public:
         : type((font_info::type_enum)fi->getType())
         , is_embedded(fi->getEmbedded())
         , is_subset(fi->getSubset())
-        , emb_ref(fi->getEmbRef())
     {
         if (fi->getName()) {
             font_name = fi->getName()->getCString();
@@ -52,7 +54,6 @@ public:
     font_info::type_enum type : 5;
     bool is_embedded : 1;
     bool is_subset : 1;
-    Ref emb_ref;
 };
 
 

@@ -8,7 +8,6 @@ configure_file(poppler-version.h.in ${CMAKE_CURRENT_BINARY_DIR}/poppler-version.
 add_subdirectory(tests)
 
 set(poppler_cpp_SRCS
-  PNMWriter.cc
   poppler-document.cpp
   poppler-embedded-file.cpp
   poppler-font.cpp
@@ -24,7 +23,7 @@ set(poppler_cpp_SRCS
 )
 
 add_library(poppler-cpp SHARED ${poppler_cpp_SRCS})
-set_target_properties(poppler-cpp PROPERTIES VERSION 0.2.0 SOVERSION 0)
+set_target_properties(poppler-cpp PROPERTIES VERSION 0.2.1 SOVERSION 0)
 target_link_libraries(poppler-cpp poppler ${ICONV_LIBRARIES})
 if(MSVC)
 target_link_libraries(poppler-cpp ${poppler_LIBS})

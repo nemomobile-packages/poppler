@@ -30,6 +30,7 @@ set(poppler_glib_public_headers
   poppler-movie.h
   poppler-media.h
   poppler.h
+  poppler-structure-element.h
 )
 
 find_program(GLIB2_MKENUMS glib-mkenums)
@@ -71,6 +72,7 @@ set(poppler_glib_SRCS
   poppler.cc
   poppler-cached-file-loader.cc
   poppler-input-stream.cc
+  poppler-structure-element.cc
 )
 set(poppler_glib_generated_SRCS
   ${CMAKE_CURRENT_BINARY_DIR}/poppler-enums.c
@@ -79,7 +81,7 @@ set(poppler_glib_generated_SRCS
   ${CMAKE_SOURCE_DIR}/poppler/CairoRescaleBox.cc
 )
 add_library(poppler-glib SHARED ${poppler_glib_SRCS} ${poppler_glib_generated_SRCS})
-set_target_properties(poppler-glib PROPERTIES VERSION 8.6.0 SOVERSION 8)
+set_target_properties(poppler-glib PROPERTIES VERSION 8.7.0 SOVERSION 8)
 target_link_libraries(poppler-glib poppler ${GLIB2_LIBRARIES} ${CAIRO_LIBRARIES} ${FREETYPE_LIBRARIES})
 if(HAVE_PTHREAD)
    target_link_libraries(poppler-glib -lpthread)

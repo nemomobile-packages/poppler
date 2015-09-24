@@ -16,9 +16,14 @@ test_big_endian(WORDS_BIGENDIAN)
 include(CheckFileOffsetBits)
 CHECK_FILE_OFFSET_BITS()
 
+find_package (ECM 1.6.0 QUIET NO_MODULE)
+if (ECM_FOUND)
+    include("${ECM_MODULE_DIR}/ECMEnableSanitizers.cmake")
+endif()
+
 set(POPPLER_MAJOR_VERSION "0")
-set(POPPLER_MINOR_VERSION "24")
-set(POPPLER_MICRO_VERSION "5")
+set(POPPLER_MINOR_VERSION "36")
+set(POPPLER_MICRO_VERSION "0")
 set(POPPLER_VERSION "${POPPLER_MAJOR_VERSION}.${POPPLER_MINOR_VERSION}.${POPPLER_MICRO_VERSION}")
 
 # command line switches
@@ -30,10 +35,11 @@ option(BUILD_CPP_TESTS "Whether compile the CPP test programs." ON)
 option(ENABLE_SPLASH "Build the Splash graphics backend." ON)
 option(ENABLE_UTILS "Compile poppler command line utils." ON)
 option(ENABLE_CPP "Compile poppler cpp wrapper." ON)
-option(ENABLE_LIBOPENJPEG "Use libopenjpeg for JPX streams." ON)
+set(ENABLE_LIBOPENJPEG "auto" CACHE STRING "Use libopenjpeg for JPX streams. Possible values: auto, openjpeg1, openjpeg2. 'auto' prefers openjpeg1 over openjpeg2 if both are available. Unset to not use openjpeg.")
 set(ENABLE_CMS "auto" CACHE STRING "Use color management system. Possible values: auto, lcms1, lcms2. 'auto' prefers lcms2 over lcms1 if both are available. Unset to disable color management system.")
 option(ENABLE_LIBCURL "Build libcurl based HTTP support." OFF)
 option(ENABLE_ZLIB "Build with zlib (not totally safe)." OFF)
+option(SPLASH_CMYK "Include support for CMYK rasterization." OFF)
 option(USE_FIXEDPOINT "Use fixed point arithmetic in the Splash backend" OFF)
 option(USE_FLOAT "Use single precision arithmetic in the Splash backend" OFF)
 if(WIN32)
@@ -43,6 +49,7 @@ else(WIN32)
 endif(WIN32)
 
 set(LIB_SUFFIX "" CACHE STRING "Define suffix of directory name (32/64)")
+set(SHARE_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/share" CACHE STRING "Share directory name")
 
 set(TESTDATADIR "${CMAKE_SOURCE_DIR}/../test" CACHE STRING "Specify test data dir.")
 if(NOT (EXISTS ${TESTDATADIR} AND EXISTS ${TESTDATADIR}/test-poppler.c))
@@ -86,7 +93,7 @@ set(OPI_SUPPORT ON)
 set(TEXTOUT_WORD_LIST ON)
 
 # setting the minimum required versions for some components
-set(QT4_MIN_VERSION "4.4.0")
+set(QT4_MIN_VERSION "4.7.0")
 set(CAIRO_VERSION "1.10.0")
 set(GLIB_REQUIRED "2.18")
 
@@ -151,11 +158,28 @@ if(ENABLE_ZLIB)
   endif(ZLIB_FOUND)
   set(ENABLE_ZLIB ${ZLIB_FOUND})
 endif(ENABLE_ZLIB)
-if(ENABLE_LIBOPENJPEG)
+set(USE_OPENJPEG1 FALSE)
+set(USE_OPENJPEG2 FALSE)
+set(WITH_OPENJPEG FALSE)
+if(ENABLE_LIBOPENJPEG STREQUAL "auto")
   find_package(LIBOPENJPEG)
-  set(ENABLE_LIBOPENJPEG ${LIBOPENJPEG_FOUND})
-  set(HAVE_OPENJPEG_H ON)
-endif(ENABLE_LIBOPENJPEG)
+  set(USE_OPENJPEG1 ${LIBOPENJPEG_FOUND})
+  set(WITH_OPENJPEG ${LIBOPENJPEG_FOUND})
+  if(NOT LIBOPENJPEG_FOUND)
+    find_package(LIBOPENJPEG2)
+    set(USE_OPENJPEG2 ${LIBOPENJPEG2_FOUND})
+    set(WITH_OPENJPEG ${LIBOPENJPEG2_FOUND})
+  endif()
+elseif(ENABLE_LIBOPENJPEG STREQUAL "openjpeg1")
+  find_package(LIBOPENJPEG)
+  set(USE_OPENJPEG1 ${LIBOPENJPEG_FOUND})
+  set(WITH_OPENJPEG ${LIBOPENJPEG_FOUND})
+elseif(ENABLE_LIBOPENJPEG STREQUAL "openjpeg2")
+  find_package(LIBOPENJPEG2)
+  set(USE_OPENJPEG2 ${LIBOPENJPEG2_FOUND})
+  set(WITH_OPENJPEG ${LIBOPENJPEG2_FOUND})
+endif()
+set(ENABLE_LIBOPENJPEG "${WITH_OPENJPEG}")
 if(ENABLE_CMS STREQUAL "auto")
   find_package(LCMS2)
   set(USE_CMS ${LCMS2_FOUND})
@@ -225,12 +249,31 @@ endif(TIFF_FOUND)
 if(LIBOPENJPEG_FOUND)
   include_directories(${LIBOPENJPEG_INCLUDE_DIR})
 endif(LIBOPENJPEG_FOUND)
+if(LIBOPENJPEG2_FOUND)
+  include_directories(${LIBOPENJPEG2_INCLUDE_DIRS})
+endif()
 if(LCMS_FOUND)
   include_directories(${LCMS_INCLUDE_DIR})
 endif(LCMS_FOUND)
 if(LCMS2_FOUND)
   include_directories(${LCMS2_INCLUDE_DIR})
 endif(LCMS2_FOUND)
+
+# Recent versions of poppler-data install a .pc file.
+# Use it to determine the encoding data path, if available.
+# Default to the same prefix otherwise.
+pkg_check_modules(POPPLER_DATA poppler-data)
+if(POPPLER_DATA_FOUND)
+  execute_process(COMMAND "${PKG_CONFIG_EXECUTABLE}" --variable=poppler_datadir poppler-data
+                  RESULT_VARIABLE _result_var
+                  OUTPUT_VARIABLE _output_var OUTPUT_STRIP_TRAILING_WHITESPACE)
+  if(_result_var STREQUAL "0" AND NOT _output_var STREQUAL "")
+    set(POPPLER_DATADIR "${_output_var}")
+  endif(_result_var STREQUAL "0" AND NOT _output_var STREQUAL "")
+endif(POPPLER_DATA_FOUND)
+if(NOT DEFINED POPPLER_DATADIR)
+  set(POPPLER_DATADIR "${CMAKE_INSTALL_PREFIX}/share/poppler")
+endif(NOT DEFINED POPPLER_DATADIR)
 
 if(DEFINED COMPILE_WARNINGS)
 else(DEFINED COMPILE_WARNINGS)
@@ -264,6 +307,7 @@ set(poppler_SRCS
   goo/GooString.cc
   goo/gmem.cc
   goo/FixedPoint.cc
+  goo/NetPBMWriter.cc
   goo/PNGWriter.cc
   goo/TiffWriter.cc
   goo/JpegWriter.cc
@@ -304,6 +348,7 @@ set(poppler_SRCS
   poppler/Link.cc
   poppler/Linearization.cc
   poppler/LocalPDFDocBuilder.cc
+  poppler/MarkedContentOutputDev.cc
   poppler/NameToCharCode.cc
   poppler/Object.cc
   poppler/OptionalContent.cc
@@ -320,6 +365,8 @@ set(poppler_SRCS
   poppler/PreScanOutputDev.cc
   poppler/PSTokenizer.cc
   poppler/Stream.cc
+  poppler/StructTreeRoot.cc
+  poppler/StructElement.cc
   poppler/strtok_r.cpp
   poppler/UnicodeMap.cc
   poppler/UnicodeTypeTable.cc
@@ -389,11 +436,19 @@ if(LIBOPENJPEG_FOUND)
     poppler/JPEG2000Stream.cc
   )
   set(poppler_LIBS ${poppler_LIBS} ${LIBOPENJPEG_LIBRARIES})
-else (LIBOPENJPEG_FOUND)
+  add_definitions(-DUSE_OPENJPEG1)
+elseif (LIBOPENJPEG2_FOUND)
+  set(poppler_SRCS ${poppler_SRCS}
+    poppler/JPEG2000Stream.cc
+  )
+  add_definitions(-DUSE_OPENJPEG2)
+MESSAGE(${LIBOPENJPEG2_LIBRARIES})
+  set(poppler_LIBS ${poppler_LIBS} ${LIBOPENJPEG2_LIBRARIES})
+else ()
   set(poppler_SRCS ${poppler_SRCS}
     poppler/JPXStream.cc
   )
-endif(LIBOPENJPEG_FOUND)
+endif()
 if(USE_CMS)
   if(LCMS_FOUND)
     set(poppler_LIBS ${poppler_LIBS} ${LCMS_LIBRARIES})
@@ -423,7 +478,7 @@ add_library(poppler STATIC ${poppler_SRCS})
 else(MSVC)
 add_library(poppler SHARED ${poppler_SRCS})
 endif(MSVC)
-set_target_properties(poppler PROPERTIES VERSION 44.0.0 SOVERSION 44)
+set_target_properties(poppler PROPERTIES VERSION 55.0.0 SOVERSION 55)
 target_link_libraries(poppler ${poppler_LIBS})
 target_link_libraries(poppler LINK_INTERFACE_LIBRARIES "")
 install(TARGETS poppler RUNTIME DESTINATION bin LIBRARY DESTINATION lib${LIB_SUFFIX} ARCHIVE DESTINATION lib${LIB_SUFFIX})
@@ -460,6 +515,7 @@ if(ENABLE_XPDF_HEADERS)
     poppler/Link.h
     poppler/Linearization.h
     poppler/LocalPDFDocBuilder.h
+    poppler/MarkedContentOutputDev.h
     poppler/Movie.h
     poppler/NameToCharCode.h
     poppler/Object.h
@@ -480,6 +536,8 @@ if(ENABLE_XPDF_HEADERS)
     poppler/Rendition.h
     poppler/Stream-CCITT.h
     poppler/Stream.h
+    poppler/StructElement.h
+    poppler/StructTreeRoot.h
     poppler/UnicodeMap.h
     poppler/UnicodeMapTables.h
     poppler/UnicodeTypeTable.h
@@ -528,6 +586,11 @@ if(ENABLE_XPDF_HEADERS)
       goo/TiffWriter.h
       DESTINATION include/poppler/goo)
   endif(TIFF_FOUND)
+  if(JPEG_FOUND)
+    install(FILES
+      goo/JpegWriter.h
+      DESTINATION include/poppler/goo)
+  endif(JPEG_FOUND)
   install(FILES
     fofi/FoFiBase.h
     fofi/FoFiEncodings.h
@@ -546,14 +609,15 @@ if(ENABLE_XPDF_HEADERS)
     install(FILES
       poppler/JPEG2000Stream.h
       DESTINATION include/poppler)
+  elseif(LIBOPENJPEG2_FOUND)
     install(FILES
-      goo/JpegWriter.h
-      DESTINATION include/poppler/goo)
-  else(LIBOPENJPEG_FOUND)
+      poppler/JPEG2000Stream.h
+      DESTINATION include/poppler)
+  else()
     install(FILES
       poppler/JPXStream.h
       DESTINATION include/poppler)
-  endif(LIBOPENJPEG_FOUND)
+  endif()
   if(ENABLE_SPLASH)
     install(FILES
       poppler/SplashOutputDev.h
@@ -641,6 +705,9 @@ endif(ENABLE_CPP)
 message("Building Poppler with support for:")
 show_end_message("font configuration" ${font_configuration})
 show_end_message_yesno("splash output" ENABLE_SPLASH)
+if(SPLASH_CMYK)
+  message("      with CMYK support")
+endif()
 show_end_message_yesno("cairo output" CAIRO_FOUND)
 show_end_message_yesno("qt4 wrapper" QT4_FOUND)
 show_end_message_yesno("qt5 wrapper" QT5_FOUND)
@@ -653,7 +720,13 @@ show_end_message_yesno("use libpng" ENABLE_LIBPNG)
 show_end_message_yesno("use libtiff" ENABLE_LIBTIFF)
 show_end_message_yesno("use zlib" ENABLE_ZLIB)
 show_end_message_yesno("use curl" ENABLE_LIBCURL)
-show_end_message_yesno("use libopenjpeg" LIBOPENJPEG_FOUND)
+show_end_message_yesno("use libopenjpeg" WITH_OPENJPEG)
+if(USE_OPENJPEG1)
+  message("      with openjpeg1")
+endif()
+if(USE_OPENJPEG2)
+  message("      with openjpeg2")
+endif()
 show_end_message_yesno("use cms" USE_CMS)
 if(LCMS_FOUND)
   message("      with lcms1")

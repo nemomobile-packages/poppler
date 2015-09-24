@@ -1,12 +1,12 @@
 m4_define([poppler_version_major],[0])
-m4_define([poppler_version_minor],[24])
-m4_define([poppler_version_micro],[5])
+m4_define([poppler_version_minor],[36])
+m4_define([poppler_version_micro],[0])
 m4_define([poppler_version],[poppler_version_major.poppler_version_minor.poppler_version_micro])
 
 AC_PREREQ(2.59)
 AC_INIT([poppler],[poppler_version],[https://bugs.freedesktop.org/enter_bug.cgi?product=poppler])
 AC_CONFIG_MACRO_DIR([m4])
-AM_INIT_AUTOMAKE([foreign])
+AM_INIT_AUTOMAKE([1.7 foreign])
 m4_ifdef([AM_SILENT_RULES],[AM_SILENT_RULES([yes])])
 AC_CONFIG_HEADERS([config.h poppler/poppler-config.h])
 AC_C_BIGENDIAN
@@ -25,21 +25,6 @@ AC_PROG_CC_STDC
 #  CXX="gcc"
 #fi
 AC_PROG_CXX
-if test "x$GXX" = "xyes"; then
-  case "$host_os" in
-    cygwin* | mingw*)
-    ;;
-    *)
-      case "${CXXFLAGS}" in
-      *-std=*)
-        ;;
-      *)
-        CXXFLAGS="$CXXFLAGS -ansi"
-        ;;
-      esac
-    ;;
-  esac
-fi
 AC_PROG_INSTALL
 
 dnl ##### Check for pkgconfig
@@ -63,7 +48,7 @@ case "$host_os" in
   ;;
   mingw*)
     os_win32=yes
-    win32_libs="-lgdi32"
+    win32_libs="-lgdi32 -lwinspool -lcomdlg32"
     create_shared_lib="-no-undefined"
     auto_import_flags="-Wl,--enable-auto-import"
 
@@ -86,6 +71,55 @@ AC_ARG_ENABLE(xpdf-headers,
               enable_xpdf_headers="no")
 AM_CONDITIONAL(ENABLE_XPDF_HEADERS, test x$enable_xpdf_headers = xyes)
 
+dnl ##### Emulate cmake -DCMAKE_BUILD_TYPE=Release using options from cmake/modules/PopplerMacros.cmake
+
+AC_ARG_ENABLE(build-type,
+              AC_HELP_STRING([--enable-build-type=@<:@relwithdebinfo/release/debug/debugfull/profile@:>@],
+                             [Build with options similar to 'cmake -DCMAKE_BUILD_TYPE=' values.]),
+              [enable_build_type=no;
+              case "$enableval" in
+              relwithdebinfo|release|debug|debugfull|profile) enable_build_type="$enableval" ;;
+              *) AC_MSG_ERROR([bad value $enableval for --enable-build-type option.
+                               Options are relwithdebinfo, release, debug, debugfull, and profile.]) ;;
+              esac],
+              enable_build_type=no)
+
+if test "x$GCC" = "xyes"; then
+    case "$enable_build_type" in
+    relwithdebinfo)
+        CFLAGS="-O2 -g $CFLAGS"
+        CXXFLAGS="-O2 -g $CXXFLAGS"
+        ;;
+    release)
+        CFLAGS="-O2 $CFLAGS -g0 -DNDEBUG"
+        CXXFLAGS="-O2 $CXXFLAGS -g0 -DNDEBUG"
+        ;;
+    debug)
+        CFLAGS="-O2 -g $CFLAGS -fno-reorder-blocks -fno-schedule-insns -fno-inline"
+        CXXFLAGS="-O2 -g $CXXFLAGS -fno-reorder-blocks -fno-schedule-insns -fno-inline"
+        ;;
+    debugfull)
+        CFLAGS="$CFLAGS -g3 -fno-inline"
+        CXXFLAGS="$CXXFLAGS -g3 -fno-inline"
+        ;;
+    profile)
+        CFLAGS="$CFLAGS -g3 -fno-inline -ftest-coverage -fprofile-arcs"
+        CXXFLAGS="$CXXFLAGS -g3 -fno-inline -ftest-coverage -fprofile-arcs"
+        LDFLAGS="$LDFLAGS -fprofile-arcs -ftest-coverage -lgcov"
+        ;;
+    *)
+        enable_build_type=no
+        ;;
+    esac
+else
+    case "$enable_build_type" in
+    relwithdebinfo|release|debug|debugfull|profile)
+        echo "  Warning: --enable-build-type ignored for non-gcc compiler."
+        ;;
+    esac
+    enable_build_type=no
+fi
+
 AC_ARG_ENABLE(single-precision,
 [  --enable-single-precision     use single precision arithmetic (instead of double precision) in the Splash backend],
 AC_DEFINE(USE_FLOAT,      [1], [Use single precision arithmetic in the Splash backend]))
@@ -93,6 +127,10 @@ AC_DEFINE(USE_FLOAT,      [1], [Use single precision arithmetic in the Splash ba
 AC_ARG_ENABLE(fixedpoint,
 [  --enable-fixedpoint     use fixed point (instead of double precision) arithmetic in the Splash backend],
 AC_DEFINE(USE_FIXEDPOINT, [1], [Use fixed point arithmetic in the Splash backend]))
+
+AC_ARG_ENABLE(cmyk,
+[  --enable-cmyk           Include support for CMYK rasterization],
+AC_DEFINE(SPLASH_CMYK, [1], [Include support for CMYK rasterization]))
 
 dnl Relocation support
 AC_ARG_ENABLE(relocatable,
@@ -120,7 +158,12 @@ if test x$enable_relocatable = xyes; then
     fi
 fi
 
-AC_DEFINE_DIR(POPPLER_DATADIR, "{datarootdir}/poppler", [Poppler data dir])
+dnl ##### Check for installed poppler-data. Use the same datarootdir as default otherwise.
+PKG_CHECK_EXISTS(poppler-data,
+                 [POPPLER_DATADIR=`$PKG_CONFIG --variable=poppler_datadir poppler-data`
+                  AC_DEFINE_DIR(POPPLER_DATADIR, "{POPPLER_DATADIR}", [Poppler data dir])],
+                 [AC_DEFINE_DIR(POPPLER_DATADIR, "{datarootdir}/poppler", [Poppler data dir])]
+                 )
 
 dnl ##### Checks for header files.
 AC_PATH_XTRA
@@ -157,41 +200,71 @@ then
 fi
 
 
-dnl Test for libopenjpeg. Versions prior to 1.4 do not provide a pkgconfig file.
+dnl ##### Test for libopenjpeg. Versions prior to 1.4 do not provide a pkgconfig file.
+openjpeg1="no"
+openjpeg2="no"
 AC_ARG_ENABLE(libopenjpeg,
-	      AC_HELP_STRING([--disable-libopenjpeg],
-	                     [Don't build against libopenjpeg.]),
-              enable_libopenjpeg=$enableval,
-              enable_libopenjpeg="try")
-if test x$enable_libopenjpeg = xyes; then
+	      AC_HELP_STRING([--enable-libopenjpeg=@<:@auto/openjpeg1/openjpeg2/none@:>@],
+                             [Use openjpeg for JPEG2000 images. 'auto' prefers openjpeg1 over openjpeg2 if both are available due to regressions in openjpeg2 [[default=auto]]]),
+              [enable_libopenjpeg=$enableval],
+              [enable_libopenjpeg="auto"])
+
+openjpeg_header=yes
+
+dnl test for libopenjpeg1
+if test x$enable_libopenjpeg = xopenjpeg1 || test x$enable_libopenjpeg = xauto; then
   PKG_CHECK_MODULES(LIBOPENJPEG, libopenjpeg,
-  		    [],
-    		    [AC_CHECK_LIB([openjpeg], [opj_cio_open],
-  			LIBOPENJPEG_LIBS="-lopenjpeg",
-		        AC_MSG_ERROR("*** libopenjpeg library not found ***"))
-		     AC_CHECK_HEADERS([openjpeg.h],,
-		     	AC_MSG_ERROR("*** libopenjpeg headers not found ***"))])
-elif test x$enable_libopenjpeg = xtry; then
-  PKG_CHECK_MODULES(LIBOPENJPEG, libopenjpeg,
-                    [enable_libopenjpeg="yes"],
-  		    [AC_CHECK_LIB([openjpeg], [opj_cio_open],
-		        [enable_libopenjpeg="yes"
-  			 LIBOPENJPEG_LIBS="-lopenjpeg"],
-	                [enable_libopenjpeg="no"])
-		     AC_CHECK_HEADERS([openjpeg.h],,
-		         [enable_libopenjpeg="no"])])
+    [openjpeg1="yes"],
+    [AC_CHECK_LIB([openjpeg], [opj_cio_open],
+      [openjpeg1="yes"
+       LIBOPENJPEG_LIBS="-lopenjpeg"],[openjpeg_header=no])
+     AC_CHECK_HEADERS([openjpeg.h],,
+		      [openjpeg="no"])])
 fi
 
-if test x$enable_libopenjpeg = xyes; then
+dnl test for libopenjpeg2
+if test x$openjpeg1 = xno; then
+  if test x$enable_libopenjpeg = xopenjpeg2 || test x$enable_libopenjpeg = xauto; then
+    PKG_CHECK_MODULES(LIBOPENJPEG, libopenjp2,
+                      [openjpeg2=yes],[])
+  fi
+fi
+
+if test x$enable_libopenjpeg = xopenjpeg1 && test x$openjpeg1 = xno; then
+  if test x$openjpeg_header = xno; then
+    AC_MSG_ERROR("*** libopenjpeg headers not found ***")
+  else
+    AC_MSG_ERROR("*** libopenjpeg library not found ***")
+  fi
+fi
+
+if test x$enable_libopenjpeg = xopenjpeg2 && test x$openjpeg2 = xno; then
+  AC_MSG_ERROR("*** libopenjp2 library not found ***")
+fi
+
+if test x$openjpeg1 = xyes || test x$openjpeg2 = xyes; then
+  enable_libopenjpeg=yes
+  if test x$openjpeg1 = xyes; then
+    AC_DEFINE(USE_OPENJPEG1, 1, [Defined if using openjpeg1])
+  fi
+  if test x$openjpeg2 = xyes; then
+    AC_DEFINE(USE_OPENJPEG2, 1, [Defined if using openjpeg2])
+  fi
+
   AC_SUBST(LIBOPENJPEG_CFLAGS)
   AC_SUBST(LIBOPENJPEG_LIBS)
   AC_DEFINE(ENABLE_LIBOPENJPEG)
   PKG_CHECK_EXISTS(libopenjpeg >= 1.5,
       [AC_DEFINE(WITH_OPENJPEG_IGNORE_PCLR_CMAP_CDEF_FLAG, 1, [OpenJPEG with the OPJ_DPARAMETERS_IGNORE_PCLR_CMAP_CDEF_FLAG flag.])],
-      [])
+      [PKG_CHECK_EXISTS(libopenjpeg1 >= 1.5,
+       [AC_DEFINE(WITH_OPENJPEG_IGNORE_PCLR_CMAP_CDEF_FLAG, 1, [OpenJPEG with the OPJ_DPARAMETERS_IGNORE_PCLR_CMAP_CDEF_FLAG flag.])],
+       [])
+      ])
+else
+  enable_libopenjpeg=no
 fi
 
-AM_CONDITIONAL(BUILD_LIBOPENJPEG, test x$enable_libopenjpeg = xyes)
+AM_CONDITIONAL(BUILD_LIBOPENJPEG, test x$openjpeg1 = xyes || test x$openjpeg2 = xyes)
 AH_TEMPLATE([ENABLE_LIBOPENJPEG],
 	    [Use libopenjpeg instead of builtin jpeg2000 decoder.])
 
@@ -211,7 +284,7 @@ CPPFLAGS="$CPPFLAGS $LIBTIFF_CFLAGS"
 CXXFLAGS="$CXXFLAGS $LIBTIFF_CFLAGS"
 LIBS="$LIBS $LIBTIFF_LIBS"
 if test x$enable_libtiff = xyes; then
-  if test x"$LIBTIFF_LIBS" != ; then
+  if test x"$LIBTIFF_LIBS" != x; then
     AC_CHECK_FUNC([TIFFOpen],,
 		  AC_MSG_ERROR("*** libtiff library not found ***"))
   else
@@ -241,7 +314,7 @@ if test x$enable_libtiff = xyes; then
   if test x"$LIBTIFF_LIBS" = x; then
     LIBTIFF_LIBS="-ltiff"
   fi
-  AC_SUBST(LIBTIFF_CFLAGSS)
+  AC_SUBST(LIBTIFF_CFLAGS)
   AC_SUBST(LIBTIFF_LIBS)
   AC_DEFINE(ENABLE_LIBTIFF)
 fi
@@ -477,6 +550,7 @@ fi
 
 CAIRO_VERSION="1.10.0"
 AC_SUBST(CAIRO_VERSION)
+CAIRO_DEPS="cairo >= $CAIRO_VERSION cairo-ft >= $CAIRO_VERSION"
 AC_ARG_ENABLE(cairo-output,
               AC_HELP_STRING([--disable-cairo-output],
                              [Don't build the cairo graphics backend.]),
@@ -484,9 +558,9 @@ AC_ARG_ENABLE(cairo-output,
               enable_cairo_output="try")
 use_cairo=""
 if test x$enable_cairo_output = xyes; then
-  PKG_CHECK_MODULES(CAIRO, cairo >= $CAIRO_VERSION cairo-ft >= $CAIRO_VERSION)
+  PKG_CHECK_MODULES(CAIRO, $CAIRO_DEPS)
 elif test x$enable_cairo_output = xtry; then
-  PKG_CHECK_MODULES(CAIRO, cairo >= $CAIRO_VERSION cairo-ft >= $CAIRO_VERSION,
+  PKG_CHECK_MODULES(CAIRO, $CAIRO_DEPS,
                     [enable_cairo_output="yes"],
                     [enable_cairo_output="no"
 		     use_cairo="no (requires cairo >= $CAIRO_VERSION)"])
@@ -580,17 +654,17 @@ AC_ARG_ENABLE(poppler-qt4,
               enable_poppler_qt4="try")
 if test x$enable_poppler_qt4 = xyes; then
   PKG_CHECK_MODULES(POPPLER_QT4, 
-	            QtCore >= 4.4.0 QtGui >= 4.4.0 QtXml >= 4.4.0)
+	            QtCore >= 4.7.0 QtGui >= 4.7.0 QtXml >= 4.7.0)
   PKG_CHECK_MODULES(POPPLER_QT4_TEST, 
-	            QtTest >= 4.4.0)
+	            QtTest >= 4.7.0)
 elif test x$enable_poppler_qt4 = xtry; then
   PKG_CHECK_MODULES(POPPLER_QT4,
-                    QtCore >= 4.4.0 QtGui >= 4.4.0 QtXml >= 4.4.0,
+                    QtCore >= 4.7.0 QtGui >= 4.7.0 QtXml >= 4.7.0,
                     [enable_poppler_qt4="yes"],
                     [enable_poppler_qt4="no"])
   if test x$enable_poppler_qt4 = xyes; then
     PKG_CHECK_MODULES(POPPLER_QT4_TEST,
-                    QtTest >= 4.4.0,
+                    QtTest >= 4.7.0,
                     [enable_poppler_qt4="yes"],
                     [enable_poppler_qt4="no"])
   fi
@@ -661,20 +735,20 @@ if test x$enable_poppler_qt5 = xyes; then
   AC_CHECK_TOOL(MOCQT5, moc)
   AC_MSG_CHECKING([for Qt5 moc])
   mocversion=`$MOCQT5 -v 2>&1`
-  mocversiongrep=`echo $mocversion | grep "Qt 5"`
+  mocversiongrep=`echo $mocversion | grep "Qt 5\|moc 5"`
   if test x"$mocversiongrep" != x"$mocversion"; then
     AC_MSG_RESULT([no])
     # moc was not the qt5 one, try with moc-qt5
     AC_CHECK_TOOL(MOCQT52, moc-qt5)
     AC_MSG_CHECKING([for Qt5 moc-qt5])
     mocversion=`$MOCQT52 -v 2>&1`
-    mocversiongrep=`echo $mocversion | grep "Qt 5"`
+    mocversiongrep=`echo $mocversion | grep "Qt 5\|moc-qt5 5\|moc 5"`
     if test x"$mocversiongrep" != x"$mocversion"; then
       AC_CHECK_TOOL(QTCHOOSER, qtchooser)
       AC_MSG_CHECKING([for qtchooser])
       qt5tooldir=`QT_SELECT=qt5 qtchooser -print-env | grep QTTOOLDIR | cut -d '=' -f 2 | cut -d \" -f 2`
       mocversion=`$qt5tooldir/moc -v 2>&1`
-      mocversiongrep=`echo $mocversion | grep "Qt 5"`
+      mocversiongrep=`echo $mocversion | grep "Qt 5\|moc 5"`
       if test x"$mocversiongrep" != x"$mocversion"; then
         # no valid moc found
         enable_poppler_qt5=no;
@@ -711,15 +785,19 @@ fi
 AM_CONDITIONAL(BUILD_POPPLER_CPP, test "x$enable_poppler_cpp" = "xyes")
 
 
+GTK_TEST_DEPS='gtk+-3.0 >= 3.8 gdk-pixbuf-2.0'
+if test x$enable_cairo_output = xyes; then
+  GTK_TEST_DEPS="$GTK_TEST_DEPS $CAIRO_DEPS"
+fi
 AC_ARG_ENABLE(gtk-test,
               AC_HELP_STRING([--disable-gtk-test],
 	                     [Don't compile GTK+ test program.]),
               enable_gtk_test=$enableval,
               enable_gtk_test="try")
 if test x$enable_gtk_test = xyes; then
-  PKG_CHECK_MODULES(GTK_TEST, gtk+-3.0 >= 3.0 gdk-pixbuf-2.0)
+  PKG_CHECK_MODULES(GTK_TEST, $GTK_TEST_DEPS)
 elif test x$enable_gtk_test = xtry; then
-  PKG_CHECK_MODULES(GTK_TEST, gtk+-3.0 >= 3.0 gdk-pixbuf-2.0,
+  PKG_CHECK_MODULES(GTK_TEST, $GTK_TEST_DEPS,
                     [enable_gtk_test="yes"],
                     [enable_gtk_test="no"])
 fi
@@ -764,6 +842,8 @@ if test x$lcms1 = xyes || test x$lcms2 = xyes; then
     lcms1=yes;
     AC_DEFINE(USE_LCMS1, 1, [Defines if use lcms1])
   fi
+else
+  enable_cms=no
 fi
 
 AM_CONDITIONAL(USE_CMS, test x$enable_cms = xyes)
@@ -810,21 +890,45 @@ else
 fi
 AC_SUBST(TESTDATADIR)
 
+# some compilers do not support this flag (see bug #76963)
+fno_check_new=
+AC_MSG_CHECKING([for -fno-check-new compiler flag])
+AC_LANG_PUSH([C++])
+saved_CXXFLAGS=$CXXFLAGS
+CXXFLAGS="-fno-check-new $CXXFLAGS"
+AC_TRY_COMPILE([], [],
+  [AC_MSG_RESULT([yes])
+  fno_check_new="-fno-check-new"],
+  AC_MSG_RESULT([no])
+)
+CXXFLAGS=$saved_CXXFLAGS
+AC_LANG_POP
+
 if test "x$GCC" != xyes; then
   enable_compile_warnings=no
 fi
 case "$enable_compile_warnings" in
   no)	;;
-  yes)	CXXFLAGS="-Wall -Woverloaded-virtual -Wnon-virtual-dtor -Wcast-align -fno-exceptions -fno-check-new -fno-common $CXXFLAGS";
+  yes)	CXXFLAGS="-Wall -Woverloaded-virtual -Wnon-virtual-dtor -Wcast-align -fno-exceptions $fno_check_new -fno-common $CXXFLAGS";
         CFLAGS="-Wall $CFLAGS" ;;
   kde)	CXXFLAGS="-Wnon-virtual-dtor -Wno-long-long -Wundef \
 		-D_XOPEN_SOURCE=600 -D_BSD_SOURCE -Wcast-align \
 		-Wconversion -Wall -W -Wpointer-arith \
 		-Wwrite-strings -O2 -Wformat-security \
-		-Wmissing-format-attribute -fno-exceptions -fno-check-new \
+		-Wmissing-format-attribute -fno-exceptions $fno_check_new \
 		-fno-common $CXXFLAGS" ;;
 esac
-CXXFLAGS="-fPIC $CXXFLAGS";
+
+case "$host_os" in
+  mingw*)
+    # mingw prints "warning: -fPIC ignored for target (all code is position independent)"
+    # for every file
+    ;;
+  *)
+    CXXFLAGS="-fPIC $CXXFLAGS";
+    ;;
+esac
+
 
 case `$PKG_CONFIG --version` in
   0.?|0.1[0-7])
@@ -887,6 +991,9 @@ echo ""
 echo "Building poppler with support for:"
 echo "  font configuration: $with_font_configuration"
 echo "  splash output:      $enable_splash_output"
+if test x$enable_cmyk = xyes;then
+        echo "      with CMYK support"
+fi
 echo "  cairo output:       $use_cairo"
 echo "  qt4 wrapper:        $enable_poppler_qt4"
 echo "  qt5 wrapper:        $enable_poppler_qt5"
@@ -900,6 +1007,13 @@ echo "  use libtiff:        $enable_libtiff"
 echo "  use zlib:           $enable_zlib"
 echo "  use libcurl:        $enable_libcurl"
 echo "  use libopenjpeg:    $enable_libopenjpeg"
+if test x$enable_libopenjpeg = xyes;then
+    if test x$openjpeg1 = xyes;then
+        echo "      with openjpeg1"
+    else
+        echo "      with openjpeg2"
+    fi
+fi
 echo "  use cms:            $enable_cms"
 if test x$enable_cms = xyes;then
     if test x$lcms1 = xyes;then
@@ -907,6 +1021,9 @@ if test x$enable_cms = xyes;then
     else
         echo "      with lcms2"
     fi
+fi
+if test x$enable_build_type != xno;then
+        echo "  build type:         $enable_build_type"
 fi
 echo "  command line utils: $enable_utils"
 echo "  test data dir:      $TESTDATADIR"

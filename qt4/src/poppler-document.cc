@@ -1,12 +1,14 @@
 /* poppler-document.cc: qt interface to poppler
  * Copyright (C) 2005, Net Integration Technologies, Inc.
  * Copyright (C) 2005, 2008, Brad Hards <bradh@frogmouth.net>
- * Copyright (C) 2005-2010, 2012, 2013, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2005-2010, 2012, 2013, 2015, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2006-2010, Pino Toscano <pino@kde.org>
  * Copyright (C) 2010, 2011 Hib Eris <hib@hiberis.nl>
  * Copyright (C) 2012 Koji Otani <sho@bbr.jp>
  * Copyright (C) 2012, 2013 Thomas Freitag <Thomas.Freitag@alfa.de>
  * Copyright (C) 2012 Fabio D'Urso <fabiodurso@hotmail.it>
+ * Copyright (C) 2014 Adam Reichold <adamreichold@myopera.com>
+ * Copyright (C) 2015 William Bader <williambader@hotmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,6 +34,7 @@
 #include <PDFDoc.h>
 #include <Stream.h>
 #include <Catalog.h>
+#include <ViewerPreferences.h>
 #include <DateInfo.h>
 #include <GfxState.h>
 
@@ -193,6 +196,21 @@ namespace Poppler {
 	}
     }
 
+    Qt::LayoutDirection Document::textDirection() const
+    {
+        if (!m_doc->doc->getCatalog()->getViewerPreferences())
+            return Qt::LayoutDirectionAuto;
+
+        switch (m_doc->doc->getCatalog()->getViewerPreferences()->getDirection()) {
+        case ViewerPreferences::directionL2R:
+            return Qt::LeftToRight;
+        case ViewerPreferences::directionR2L:
+            return Qt::RightToLeft;
+        default:
+            return Qt::LayoutDirectionAuto;
+        }
+    }
+
     int Document::numPages() const
     {
 	return m_doc->doc->getNumPages();
@@ -310,6 +328,7 @@ namespace Poppler {
 
 	Dict *infoDict = info.getDict();
 	// somehow iterate over keys in infoDict
+	keys.reserve( infoDict->getLength() );
 	for( int i=0; i < infoDict->getLength(); ++i ) {
 	    keys.append( QString::fromAscii(infoDict->getKey(i)) );
 	}
@@ -674,7 +693,7 @@ namespace Poppler {
     }
 
     bool isOverprintPreviewAvailable() {
-#if defined(SPLASH_CMYK)
+#if SPLASH_CMYK
         return true;
 #else
         return false;

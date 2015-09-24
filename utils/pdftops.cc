@@ -16,13 +16,14 @@
 // under GPL version 2 or later
 //
 // Copyright (C) 2006 Kristian Høgsberg <krh@redhat.com>
-// Copyright (C) 2007-2008, 2010 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2007-2008, 2010, 2015 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2009 Till Kamppeter <till.kamppeter@gmail.com>
 // Copyright (C) 2009 Sanjoy Mahajan <sanjoy@mit.edu>
-// Copyright (C) 2009, 2011, 2012 William Bader <williambader@hotmail.com>
+// Copyright (C) 2009, 2011, 2012, 2014, 2015 William Bader <williambader@hotmail.com>
 // Copyright (C) 2010 Hib Eris <hib@hiberis.nl>
 // Copyright (C) 2012 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright (C) 2013 Suzuki Toshiya <mpsuzuki@hiroshima-u.ac.jp>
+// Copyright (C) 2014 Adrian Johnson <ajohnson@redneon.com>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -81,7 +82,7 @@ static GBool level2 = gFalse;
 static GBool level2Sep = gFalse;
 static GBool level3 = gFalse;
 static GBool level3Sep = gFalse;
-static GBool doOrigPageSizes = gFalse;
+static GBool origPageSizes = gFalse;
 static GBool doEPS = gFalse;
 static GBool doForm = gFalse;
 #if OPI_SUPPORT
@@ -94,6 +95,8 @@ static GBool noEmbedTTFonts = gFalse;
 static GBool noEmbedCIDPSFonts = gFalse;
 static GBool noEmbedCIDTTFonts = gFalse;
 static GBool fontPassthrough = gFalse;
+static GBool optimizeColorSpace = gFalse;
+static char rasterAntialiasStr[16] = "";
 static GBool preload = gFalse;
 static char paperSize[15] = "";
 static int paperWidth = -1;
@@ -129,7 +132,7 @@ static const ArgDesc argDesc[] = {
    "generate Level 3 PostScript"},
   {"-level3sep",  argFlag,     &level3Sep,      0,
    "generate Level 3 separable PostScript"},
-  {"-origpagesizes",argFlag,   &doOrigPageSizes,0,
+  {"-origpagesizes",argFlag,   &origPageSizes,0,
    "conserve original page sizes"},
   {"-eps",        argFlag,     &doEPS,          0,
    "generate Encapsulated PostScript (EPS)"},
@@ -153,6 +156,10 @@ static const ArgDesc argDesc[] = {
    "don't embed CID TrueType fonts"},
   {"-passfonts",  argFlag,        &fontPassthrough,0,
    "don't substitute missing fonts"},
+  {"-aaRaster",   argString,   rasterAntialiasStr, sizeof(rasterAntialiasStr),
+   "enable anti-aliasing on rasterization: yes, no"},
+  {"-optimizecolorspace",  argFlag,        &optimizeColorSpace,0,
+   "convert gray RGB images to gray color space"},
   {"-preload",    argFlag,     &preload,        0,
    "preload images and forms"},
   {"-paper",      argString,   paperSize,       sizeof(paperSize),
@@ -205,6 +212,8 @@ int main(int argc, char *argv[]) {
   GBool ok;
   char *p;
   int exitCode;
+  GBool rasterAntialias = gFalse;
+  std::vector<int> pages;
 
   exitCode = 99;
 
@@ -231,10 +240,9 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "Error: use only one of the 'level' options.\n");
     exit(1);
   }
-  if ((doOrigPageSizes ? 1 : 0) +
-      (doEPS ? 1 : 0) +
+  if ((doEPS ? 1 : 0) +
       (doForm ? 1 : 0) > 1) {
-    fprintf(stderr, "Error: use only one of -origpagesizes, -eps, and -form\n");
+    fprintf(stderr, "Error: use only one of -eps, and -form\n");
     exit(1);
   }
   if (level1) {
@@ -254,15 +262,21 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "Error: forms are only available with Level 2 output.\n");
     exit(1);
   }
-  mode = doOrigPageSizes ? psModePSOrigPageSizes
-                         : doEPS ? psModeEPS
-                                 : doForm ? psModeForm
-                                          : psModePS;
+  mode = doEPS ? psModeEPS
+    : doForm ? psModeForm
+    : psModePS;
   fileName = new GooString(argv[1]);
 
   // read config file
   globalParams = new GlobalParams();
+  if (origPageSizes) {
+    paperWidth = paperHeight = -1;
+  }
   if (paperSize[0]) {
+    if (origPageSizes) {
+      fprintf(stderr, "Error: -origpagesizes and -paper may not be used together.\n");
+      exit(1);
+    }
     if (!setPSPaperSize(paperSize, paperWidth, paperHeight)) {
       fprintf(stderr, "Invalid paper size\n");
       delete fileName;
@@ -285,35 +299,6 @@ int main(int argc, char *argv[]) {
   }
   if (level1 || level1Sep || level2 || level2Sep || level3 || level3Sep) {
     globalParams->setPSLevel(level);
-  }
-  if (splashResolution > 0) {
-    globalParams->setPSRasterResolution(splashResolution);
-  }
-  if (noEmbedT1Fonts) {
-    globalParams->setPSEmbedType1(!noEmbedT1Fonts);
-  }
-  if (noEmbedTTFonts) {
-    globalParams->setPSEmbedTrueType(!noEmbedTTFonts);
-  }
-  if (noEmbedCIDPSFonts) {
-    globalParams->setPSEmbedCIDPostScript(!noEmbedCIDPSFonts);
-  }
-  if (noEmbedCIDTTFonts) {
-    globalParams->setPSEmbedCIDTrueType(!noEmbedCIDTTFonts);
-  }
-  if (fontPassthrough) {
-    globalParams->setPSFontPassthrough(fontPassthrough);
-  }
-  if (preload) {
-    globalParams->setPSPreload(preload);
-  }
-#if OPI_SUPPORT
-  if (doOPI) {
-    globalParams->setPSOPI(doOPI);
-  }
-#endif
-  if (psBinary) {
-    globalParams->setPSBinary(psBinary);
   }
   if (quiet) {
     globalParams->setErrQuiet(quiet);
@@ -394,15 +379,45 @@ int main(int argc, char *argv[]) {
     goto err2;
   }
 
+  for (int i = firstPage; i <= lastPage; ++i) {
+    pages.push_back(i);
+  }
+
   // write PostScript file
   psOut = new PSOutputDev(psFileName->getCString(), doc,
-			  NULL, firstPage, lastPage, mode,
+			  NULL, pages, mode,
 			  paperWidth,
 			  paperHeight,
+                          noCrop,
 			  duplex);
+
+  if (rasterAntialiasStr[0]) {
+    if (!GlobalParams::parseYesNo2(rasterAntialiasStr, &rasterAntialias)) {
+      fprintf(stderr, "Bad '-aaRaster' value on command line\n");
+    }
+  }
+
+  if (splashResolution > 0) {
+    psOut->setRasterResolution(splashResolution);
+  }
+  psOut->setEmbedType1(!noEmbedT1Fonts);
+  psOut->setEmbedTrueType(!noEmbedTTFonts);
+  psOut->setEmbedCIDPostScript(!noEmbedCIDPSFonts);
+  psOut->setEmbedCIDTrueType(!noEmbedCIDTTFonts);
+  psOut->setFontPassthrough(fontPassthrough);
+  psOut->setPreloadImagesForms(preload);
+  psOut->setOptimizeColorSpace(optimizeColorSpace);
+#if OPI_SUPPORT
+  psOut->setGenerateOPI(doOPI);
+#endif
+  psOut->setUseBinary(psBinary);
+
+  psOut->setRasterAntialias(rasterAntialias);
   if (psOut->isOk()) {
-    doc->displayPages(psOut, firstPage, lastPage, 72, 72,
-		      0, noCrop, !noCrop, gTrue);
+    for (int i = firstPage; i <= lastPage; ++i) {
+      doc->displayPage(psOut, i, 72, 72,
+			0, noCrop, !noCrop, gTrue);
+    }
   } else {
     delete psOut;
     exitCode = 2;
