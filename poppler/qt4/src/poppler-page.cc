@@ -1,7 +1,7 @@
 /* poppler-page.cc: qt interface to poppler
  * Copyright (C) 2005, Net Integration Technologies, Inc.
  * Copyright (C) 2005, Brad Hards <bradh@frogmouth.net>
- * Copyright (C) 2005-2013, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2005-2015, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2005, Stefan Kebekus <stefan.kebekus@math.uni-koeln.de>
  * Copyright (C) 2006-2011, Pino Toscano <pino@kde.org>
  * Copyright (C) 2008 Carlos Garcia Campos <carlosgc@gnome.org>
@@ -12,8 +12,9 @@
  * Copyright (C) 2010 Hib Eris <hib@hiberis.nl>
  * Copyright (C) 2012 Tobias Koenig <tokoe@kdab.com>
  * Copyright (C) 2012 Fabio D'Urso <fabiodurso@hotmail.it>
- * Copyright (C) 2012 Adam Reichold <adamreichold@myopera.com>
+ * Copyright (C) 2012, 2015 Adam Reichold <adamreichold@myopera.com>
  * Copyright (C) 2012, 2013 Thomas Freitag <Thomas.Freitag@alfa.de>
+ * Copyright (C) 2015 William Bader <williambader@hotmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -215,15 +216,12 @@ Link* PageData::convertLinkActionToLink(::LinkAction * a, DocumentData *parentDo
   return popplerLink;
 }
 
-TextPage *PageData::prepareTextSearch(const QString &text, Page::SearchMode caseSensitive, Page::Rotation rotate, GBool *sCase, QVector<Unicode> *u)
+inline TextPage *PageData::prepareTextSearch(const QString &text, Page::Rotation rotate, QVector<Unicode> *u)
 {
   const QChar * str = text.unicode();
   const int len = text.length();
   u->resize(len);
   for (int i = 0; i < len; ++i) (*u)[i] = str[i].unicode();
-
-  if (caseSensitive == Page::CaseSensitive) *sCase = gTrue;
-  else *sCase = gFalse;
 
   const int rotation = (int)rotate * 90;
 
@@ -234,7 +232,43 @@ TextPage *PageData::prepareTextSearch(const QString &text, Page::SearchMode case
   TextPage *textPage=td.takeText();
   
   return textPage;
-} 
+}
+
+inline GBool PageData::performSingleTextSearch(TextPage* textPage, QVector<Unicode> &u, double &sLeft, double &sTop, double &sRight, double &sBottom, Page::SearchDirection direction, GBool sCase, GBool sWords)
+{
+  if (direction == Page::FromTop)
+    return textPage->findText( u.data(), u.size(),
+           gTrue, gTrue, gFalse, gFalse, sCase, gFalse, sWords, &sLeft, &sTop, &sRight, &sBottom );
+  else if ( direction == Page::NextResult )
+    return textPage->findText( u.data(), u.size(),
+           gFalse, gTrue, gTrue, gFalse, sCase, gFalse, sWords, &sLeft, &sTop, &sRight, &sBottom );
+  else if ( direction == Page::PreviousResult )
+    return textPage->findText( u.data(), u.size(),
+           gFalse, gTrue, gTrue, gFalse, sCase, gTrue, sWords, &sLeft, &sTop, &sRight, &sBottom );
+
+  return gFalse;
+}
+
+inline QList<QRectF> PageData::performMultipleTextSearch(TextPage* textPage, QVector<Unicode> &u, GBool sCase, GBool sWords)
+{
+  QList<QRectF> results;
+  double sLeft = 0.0, sTop = 0.0, sRight = 0.0, sBottom = 0.0;
+
+  while(textPage->findText( u.data(), u.size(),
+        gFalse, gTrue, gTrue, gFalse, sCase, gFalse, sWords, &sLeft, &sTop, &sRight, &sBottom ))
+  {
+      QRectF result;
+
+      result.setLeft(sLeft);
+      result.setTop(sTop);
+      result.setRight(sRight);
+      result.setBottom(sBottom);
+
+      results.append(result);
+  }
+
+  return results;
+}
 
 Page::Page(DocumentData *doc, int index) {
   m_page = new PageData();
@@ -260,10 +294,10 @@ QImage Page::renderToImage(double xres, double yres, int x, int y, int w, int h,
     {
 #if defined(HAVE_SPLASH)
       SplashColor bgColor;
-      GBool overprint = gFalse;
-#if defined(SPLASH_CMYK)
-      overprint = m_page->parentDoc->m_hints & Document::OverprintPreview ? gTrue : gFalse;
-      if (overprint)
+      GBool overprintPreview = gFalse;
+#if SPLASH_CMYK
+      overprintPreview = m_page->parentDoc->m_hints & Document::OverprintPreview ? gTrue : gFalse;
+      if (overprintPreview)
       {
         Guchar c, m, y, k;
 
@@ -292,59 +326,71 @@ QImage Page::renderToImage(double xres, double yres, int x, int y, int w, int h,
         bgColor[1] = m_page->parentDoc->paperColor.green();
         bgColor[2] = m_page->parentDoc->paperColor.red();
       }
+
+      SplashColorMode colorMode = splashModeXBGR8;
+#if SPLASH_CMYK
+      if (overprintPreview) colorMode = splashModeDeviceN8;
+#endif
  
-      GBool AA = m_page->parentDoc->m_hints & Document::TextAntialiasing ? gTrue : gFalse;
       SplashThinLineMode thinLineMode = splashThinLineDefault;
       if (m_page->parentDoc->m_hints & Document::ThinLineShape) thinLineMode = splashThinLineShape;
       if (m_page->parentDoc->m_hints & Document::ThinLineSolid) thinLineMode = splashThinLineSolid;
 
-      SplashOutputDev * splash_output = new SplashOutputDev(
-#if defined(SPLASH_CMYK)
-                      (overprint) ? splashModeDeviceN8 : splashModeXBGR8,
-#else
-                      splashModeXBGR8,
-#endif 
-                      4, gFalse, bgColor, gTrue, AA, thinLineMode, overprint);
+      const bool ignorePaperColor = m_page->parentDoc->m_hints & Document::IgnorePaperColor;
 
-      splash_output->setVectorAntialias(m_page->parentDoc->m_hints & Document::Antialiasing ? gTrue : gFalse);
-      splash_output->setFreeTypeHinting(m_page->parentDoc->m_hints & Document::TextHinting ? gTrue : gFalse, 
+      SplashOutputDev splash_output(
+                  colorMode, 4,
+                  gFalse,
+                  ignorePaperColor ? NULL : bgColor,
+                  gTrue,
+                  thinLineMode,
+                  overprintPreview);
+
+      splash_output.setFontAntialias(m_page->parentDoc->m_hints & Document::TextAntialiasing ? gTrue : gFalse);
+      splash_output.setVectorAntialias(m_page->parentDoc->m_hints & Document::Antialiasing ? gTrue : gFalse);
+      splash_output.setFreeTypeHinting(m_page->parentDoc->m_hints & Document::TextHinting ? gTrue : gFalse,
                                         m_page->parentDoc->m_hints & Document::TextSlightHinting ? gTrue : gFalse);
 
-      splash_output->startDoc(m_page->parentDoc->doc);      
+      splash_output.startDoc(m_page->parentDoc->doc);
 
-      m_page->parentDoc->doc->displayPageSlice(splash_output, m_page->index + 1, xres, yres,
+      m_page->parentDoc->doc->displayPageSlice(&splash_output, m_page->index + 1, xres, yres,
                                                rotation, false, true, false, x, y, w, h,
                                                NULL, NULL, NULL, NULL, gTrue);
 
-      SplashBitmap *bitmap = splash_output->getBitmap();
-      int bw = bitmap->getWidth();
-      int bh = bitmap->getHeight();
+      SplashBitmap *bitmap = splash_output.getBitmap();
 
-      if (bitmap->convertToXBGR())
-      {
-        SplashColorPtr dataPtr = bitmap->getDataPtr();
+      const int bw = bitmap->getWidth();
+      const int bh = bitmap->getHeight();
+      const int brs = bitmap->getRowSize();
 
-        if (QSysInfo::BigEndian == QSysInfo::ByteOrder)
-        {
-            uchar c;
-            int count = bw * bh * 4;
-            for (int k = 0; k < count; k += 4)
-            {
-            c = dataPtr[k];
-            dataPtr[k] = dataPtr[k+3];
-            dataPtr[k+3] = c;
+      // If we use DeviceN8, convert to XBGR8.
+      // If requested, also transfer Splash's internal alpha channel.
+      const SplashBitmap::ConversionMode mode = ignorePaperColor
+              ? SplashBitmap::conversionAlphaPremultiplied
+              : SplashBitmap::conversionOpaque;
 
-            c = dataPtr[k+1];
-            dataPtr[k+1] = dataPtr[k+2];
-            dataPtr[k+2] = c;
-            }
-        }
+      const QImage::Format format = ignorePaperColor
+              ? QImage::Format_ARGB32_Premultiplied
+              : QImage::Format_RGB32;
 
-        // construct a qimage SHARING the raw bitmap data in memory
-        QImage tmpimg( dataPtr, bw, bh, QImage::Format_ARGB32 );
-        img = tmpimg.copy();
+      if (bitmap->convertToXBGR(mode)) {
+          SplashColorPtr data = bitmap->getDataPtr();
+
+          if (QSysInfo::ByteOrder == QSysInfo::BigEndian) {
+              // Convert byte order from RGBX to XBGR.
+              for (int i = 0; i < bh; ++i) {
+                  for (int j = 0; j < bw; ++j) {
+                      SplashColorPtr pixel = &data[i * brs + j];
+
+                      qSwap(pixel[0], pixel[3]);
+                      qSwap(pixel[1], pixel[2]);
+                  }
+              }
+          }
+
+          // Construct a Qt image sharing the raw bitmap data.
+          img = QImage(data, bw, bh, brs, format).copy();
       }
-      delete splash_output;
 #endif
       break;
     }
@@ -459,20 +505,27 @@ QString Page::text(const QRectF &r) const
 
 bool Page::search(const QString &text, double &sLeft, double &sTop, double &sRight, double &sBottom, SearchDirection direction, SearchMode caseSensitive, Rotation rotate) const
 {
-  GBool sCase;
-  QVector<Unicode> u;
-  TextPage *textPage = m_page->prepareTextSearch(text, caseSensitive, rotate, &sCase, &u);
+  const GBool sCase = caseSensitive == Page::CaseSensitive ? gTrue : gFalse;
 
-  bool found = false;
-  if (direction == FromTop)
-    found = textPage->findText( u.data(), u.size(), 
-            gTrue, gTrue, gFalse, gFalse, sCase, gFalse, gFalse, &sLeft, &sTop, &sRight, &sBottom );
-  else if ( direction == NextResult )
-    found = textPage->findText( u.data(), u.size(), 
-            gFalse, gTrue, gTrue, gFalse, sCase, gFalse, gFalse, &sLeft, &sTop, &sRight, &sBottom );
-  else if ( direction == PreviousResult )
-    found = textPage->findText( u.data(), u.size(), 
-            gFalse, gTrue, gTrue, gFalse, sCase, gTrue, gFalse, &sLeft, &sTop, &sRight, &sBottom );
+  QVector<Unicode> u;
+  TextPage *textPage = m_page->prepareTextSearch(text, rotate, &u);
+
+  const bool found = m_page->performSingleTextSearch(textPage, u, sLeft, sTop, sRight, sBottom, direction, sCase, gFalse);
+
+  textPage->decRefCnt();
+
+  return found;
+}
+
+bool Page::search(const QString &text, double &sLeft, double &sTop, double &sRight, double &sBottom, SearchDirection direction, SearchFlags flags, Rotation rotate) const
+{
+  const GBool sCase = flags.testFlag(IgnoreCase) ? gFalse : gTrue;
+  const GBool sWords = flags.testFlag(WholeWords) ? gTrue : gFalse;
+
+  QVector<Unicode> u;
+  TextPage *textPage = m_page->prepareTextSearch(text, rotate, &u);
+
+  const bool found = m_page->performSingleTextSearch(textPage, u, sLeft, sTop, sRight, sBottom, direction, sCase, sWords);
 
   textPage->decRefCnt();
 
@@ -499,26 +552,28 @@ bool Page::search(const QString &text, QRectF &rect, SearchDirection direction, 
 
 QList<QRectF> Page::search(const QString &text, SearchMode caseSensitive, Rotation rotate) const
 {
-  GBool sCase;
-  QVector<Unicode> u;
-  TextPage *textPage = m_page->prepareTextSearch(text, caseSensitive, rotate, &sCase, &u);
+  const GBool sCase = caseSensitive == Page::CaseSensitive ? gTrue : gFalse;
 
-  QList<QRectF> results;
-  double sLeft = 0.0, sTop = 0.0, sRight = 0.0, sBottom = 0.0;
+  QVector<Unicode> u;
+  TextPage *textPage = m_page->prepareTextSearch(text, rotate, &u);
+
+  const QList<QRectF> results = m_page->performMultipleTextSearch(textPage, u, sCase, gFalse);
   
-  while(textPage->findText( u.data(), u.size(), 
-        gFalse, gTrue, gTrue, gFalse, sCase, gFalse, gFalse, &sLeft, &sTop, &sRight, &sBottom ))
-  {
-      QRectF result;
-      
-      result.setLeft(sLeft);
-      result.setTop(sTop);
-      result.setRight(sRight);
-      result.setBottom(sBottom);
-      
-      results.append(result);
-  }
-  
+  textPage->decRefCnt();
+
+  return results;
+}
+
+QList<QRectF> Page::search(const QString &text, SearchFlags flags, Rotation rotate) const
+{
+  const GBool sCase = flags.testFlag(IgnoreCase) ? gFalse : gTrue;
+  const GBool sWords = flags.testFlag(WholeWords) ? gTrue : gFalse;
+
+  QVector<Unicode> u;
+  TextPage *textPage = m_page->prepareTextSearch(text, rotate, &u);
+
+  const QList<QRectF> results = m_page->performMultipleTextSearch(textPage, u, sCase, sWords);
+
   textPage->decRefCnt();
 
   return results;
@@ -547,6 +602,7 @@ QList<TextBox*> Page::textList(Rotation rotate) const
   
   QHash<TextWord *, TextBox*> wordBoxMap;
   
+  output_list.reserve(word_list->getLength());
   for (int i = 0; i < word_list->getLength(); i++) {
     TextWord *word = word_list->get(i);
     GooString *gooWord = word->getText();
@@ -671,7 +727,12 @@ QList<Link*> Page::links() const
 
 QList<Annotation*> Page::annotations() const
 {
-  return AnnotationPrivate::findAnnotations(m_page->page, m_page->parentDoc);
+  return AnnotationPrivate::findAnnotations(m_page->page, m_page->parentDoc, QSet<Annotation::SubType>());
+}
+
+QList<Annotation*> Page::annotations(const QSet<Annotation::SubType> &subtypes) const
+{
+  return AnnotationPrivate::findAnnotations(m_page->page, m_page->parentDoc, subtypes);
 }
 
 void Page::addAnnotation( const Annotation *ann )

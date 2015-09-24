@@ -18,14 +18,15 @@
 // Copyright (C) 2009 Michael K. Johnson <a1237@danlj.org>
 // Copyright (C) 2009 Shen Liang <shenzhuxi@gmail.com>
 // Copyright (C) 2009 Stefan Thomas <thomas@eload24.com>
-// Copyright (C) 2009-2011 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2009-2011, 2015 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2010, 2012 Adrian Johnson <ajohnson@redneon.com>
 // Copyright (C) 2010 Hib Eris <hib@hiberis.nl>
 // Copyright (C) 2010 Jonathan Liu <net147@gmail.com>
 // Copyright (C) 2010 William Bader <williambader@hotmail.com>
 // Copyright (C) 2011-2013 Thomas Freitag <Thomas.Freitag@alfa.de>
-// Copyright (C) 2013 Adam Reichold <adamreichold@myopera.com>
+// Copyright (C) 2013, 2015 Adam Reichold <adamreichold@myopera.com>
 // Copyright (C) 2013 Suzuki Toshiya <mpsuzuki@hiroshima-u.ac.jp>
+// Copyright (C) 2015 William Bader <williambader@hotmail.com>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -92,9 +93,13 @@ static GBool overprint = gFalse;
 static char enableFreeTypeStr[16] = "";
 static char antialiasStr[16] = "";
 static char vectorAntialiasStr[16] = "";
+static GBool fontAntialias = gTrue;
+static GBool vectorAntialias = gTrue;
 static char ownerPassword[33] = "";
 static char userPassword[33] = "";
 static char TiffCompressionStr[16] = "";
+static char thinLineModeStr[8] = "";
+static SplashThinLineMode thinLineMode = splashThinLineDefault;
 #ifdef UTILS_USE_PTHREADS
 static int numberOfJobs = 1;
 #endif // UTILS_USE_PTHREADS
@@ -170,6 +175,8 @@ static const ArgDesc argDesc[] = {
   {"-freetype",   argString,      enableFreeTypeStr, sizeof(enableFreeTypeStr),
    "enable FreeType font rasterizer: yes, no"},
 #endif
+  {"-thinlinemode", argString, thinLineModeStr, sizeof(thinLineModeStr),
+   "set thin line mode: none, solid, shape. Default: none"},
   
   {"-aa",         argString,      antialiasStr,   sizeof(antialiasStr),
    "enable font anti-aliasing: yes, no"},
@@ -284,7 +291,9 @@ static void processPageJobs() {
 #if SPLASH_CMYK
         			    (jpegcmyk || overprint) ? splashModeDeviceN8 :
 #endif
-		              splashModeRGB8, 4, gFalse, *pageJob.paperColor);
+		              splashModeRGB8, 4, gFalse, *pageJob.paperColor, gTrue, thinLineMode);
+    splashOut->setFontAntialias(fontAntialias);
+    splashOut->setVectorAntialias(vectorAntialias);
     splashOut->startDoc(pageJob.doc);
     
     savePageSlice(pageJob.doc, splashOut, pageJob.pg, x, y, w, h, pageJob.pg_w, pageJob.pg_h, pageJob.ppmFile);
@@ -352,6 +361,17 @@ int main(int argc, char *argv[]) {
   if (argc > 1) fileName = new GooString(argv[1]);
   if (argc == 3) ppmRoot = argv[2];
 
+  if (antialiasStr[0]) {
+    if (!GlobalParams::parseYesNo2(antialiasStr, &fontAntialias)) {
+      fprintf(stderr, "Bad '-aa' value on command line\n");
+    }
+  }
+  if (vectorAntialiasStr[0]) {
+    if (!GlobalParams::parseYesNo2(vectorAntialiasStr, &vectorAntialias)) {
+      fprintf(stderr, "Bad '-aaVector' value on command line\n");
+    }
+  }
+
   // read config file
   globalParams = new GlobalParams();
   if (enableFreeTypeStr[0]) {
@@ -359,14 +379,13 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "Bad '-freetype' value on command line\n");
     }
   }
-  if (antialiasStr[0]) {
-    if (!globalParams->setAntialias(antialiasStr)) {
-      fprintf(stderr, "Bad '-aa' value on command line\n");
-    }
-  }
-  if (vectorAntialiasStr[0]) {
-    if (!globalParams->setVectorAntialias(vectorAntialiasStr)) {
-      fprintf(stderr, "Bad '-aaVector' value on command line\n");
+  if (thinLineModeStr[0]) {
+    if (strcmp(thinLineModeStr, "solid") == 0) {
+      thinLineMode = splashThinLineSolid;
+    } else if (strcmp(thinLineModeStr, "shape") == 0) {
+      thinLineMode = splashThinLineShape;
+    } else if (strcmp(thinLineModeStr, "none") != 0) {
+      fprintf(stderr, "Bad '-thinlinemode' value on command line\n");
     }
   }
   if (quiet) {
@@ -451,7 +470,12 @@ int main(int argc, char *argv[]) {
 				    (jpegcmyk || overprint) ? splashModeDeviceN8 :
 #endif
 				             splashModeRGB8, 4,
-				  gFalse, paperColor);
+				  gFalse, paperColor, gTrue, thinLineMode);
+
+
+
+  splashOut->setFontAntialias(fontAntialias);
+  splashOut->setVectorAntialias(vectorAntialias);
   splashOut->startDoc(doc);
   
 #endif // UTILS_USE_PTHREADS

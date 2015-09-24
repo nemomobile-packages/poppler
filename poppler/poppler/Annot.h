@@ -15,7 +15,7 @@
 //
 // Copyright (C) 2006 Scott Turner <scotty1024@mac.com>
 // Copyright (C) 2007, 2008 Julien Rebetez <julienr@svn.gnome.org>
-// Copyright (C) 2007-2011, 2013 Carlos Garcia Campos <carlosgc@gnome.org>
+// Copyright (C) 2007-2011, 2013, 2015 Carlos Garcia Campos <carlosgc@gnome.org>
 // Copyright (C) 2007, 2008 Iñigo Martínez <inigomartinez@gmail.com>
 // Copyright (C) 2008 Michael Vrable <mvrable@cs.ucsd.edu>
 // Copyright (C) 2008 Hugo Mercier <hmercier31@gmail.com>
@@ -23,8 +23,9 @@
 // Copyright (C) 2008 Tomas Are Haavet <tomasare@gmail.com>
 // Copyright (C) 2009-2011, 2013 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2012, 2013 Fabio D'Urso <fabiodurso@hotmail.it>
-// Copyright (C) 2012 Tobias Koenig <tokoe@kdab.com>
+// Copyright (C) 2012, 2015 Tobias Koenig <tokoe@kdab.com>
 // Copyright (C) 2013 Thomas Freitag <Thomas.Freitag@alfa.de>
+// Copyright (C) 2013 Adrian Johnson <ajohnson@redneon.com>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -55,6 +56,7 @@ class PDFRectangle;
 class Movie;
 class LinkAction;
 class Sound;
+class FileSpec;
 
 enum AnnotLineEndingStyle {
   annotLineEndingSquare,        // Square
@@ -215,7 +217,6 @@ protected:
 class AnnotBorder {
 public:
   enum AnnotBorderType {
-    typeUnknown,
     typeArray,
     typeBS
   };
@@ -228,18 +229,21 @@ public:
     borderUnderlined  // Underlined
   };
 
-  AnnotBorder();
   virtual ~AnnotBorder();
 
   virtual void setWidth(double new_width) { width = new_width; }
 
-  virtual AnnotBorderType getType() const { return type; }
+  virtual AnnotBorderType getType() const = 0;
   virtual double getWidth() const { return width; }
   virtual int getDashLength() const { return dashLength; }
   virtual double *getDash() const { return dash; }
   virtual AnnotBorderStyle getStyle() const { return style; }
 
+  virtual void writeToObject(XRef *xref, Object *obj1) const = 0;
+
 protected:
+  AnnotBorder();
+
   GBool parseDashArray(Object *dashObj);
 
   AnnotBorderType type;
@@ -259,15 +263,16 @@ public:
   AnnotBorderArray();
   AnnotBorderArray(Array *array);
 
-  void writeToObject(XRef *xref, Object *dest) const;
-
   void setHorizontalCorner(double hc) { horizontalCorner = hc; }
   void setVerticalCorner(double vc) { verticalCorner = vc; }
 
   double getHorizontalCorner() const { return horizontalCorner; }
   double getVerticalCorner() const { return verticalCorner; }
 
-protected:
+private:
+  virtual AnnotBorderType getType() const { return typeArray; }
+  virtual void writeToObject(XRef *xref, Object *obj1) const;
+
   double horizontalCorner;          // (Default 0)
   double verticalCorner;            // (Default 0)
   // double width;                  // (Default 1)  (inherited from AnnotBorder)
@@ -284,6 +289,11 @@ public:
   AnnotBorderBS(Dict *dict);
 
 private:
+  virtual AnnotBorderType getType() const { return typeBS; }
+  virtual void writeToObject(XRef *xref, Object *obj1) const;
+
+  const char *getStyleName() const;
+
   // double width;           // W  (Default 1)   (inherited from AnnotBorder)
   // AnnotBorderStyle style; // S  (Default S)   (inherited from AnnotBorder)
   // double *dash;           // D  (Default [3]) (inherited from AnnotBorder)
@@ -517,7 +527,8 @@ public:
     typePrinterMark,    // PrinterMark    22
     typeTrapNet,        // TrapNet        23
     typeWatermark,      // Watermark      24
-    type3D              // 3D             25
+    type3D,             // 3D             25
+    typeRichMedia       // RichMedia      26
   };
 
   /**
@@ -534,6 +545,13 @@ public:
     actionPageClosing,    ///< Performed when the page containing the annotation is closed
     actionPageVisible,    ///< Performed when the page containing the annotation becomes visible
     actionPageInvisible   ///< Performed when the page containing the annotation becomes invisible
+  };
+
+  enum FormAdditionalActionsType {
+    actionFieldModified,   ///< Performed when the when the user modifies the field
+    actionFormatField,     ///< Performed before the field is formatted to display its value
+    actionValidateField,   ///< Performed when the field value changes
+    actionCalculateField,  ///< Performed when the field needs to be recalculated
   };
 
   Annot(PDFDoc *docA, PDFRectangle *rectA);
@@ -568,7 +586,7 @@ public:
   void setModified(GooString *new_date);
   void setFlags(Guint new_flags);
 
-  void setBorder(AnnotBorderArray *new_border); // Takes ownership
+  void setBorder(AnnotBorder *new_border); // Takes ownership
 
   // The annotation takes the ownership of
   // new_color. 
@@ -612,6 +630,7 @@ protected:
   virtual ~Annot();
   virtual void removeReferencedObjects(); // Called by Page::removeAnnot
   void setColor(AnnotColor *color, GBool fill);
+  void setLineStyleForBorder(AnnotBorder *border);
   void drawCircle(double cx, double cy, double r, GBool fill);
   void drawCircleTopLeft(double cx, double cy, double r);
   void drawCircleBottomRight(double cx, double cy, double r);
@@ -680,7 +699,7 @@ public:
   ~AnnotPopup();
 
   Object *getParent(Object *obj) { return parent.fetch (xref, obj); }
-  Object *getParentNF(Object *obj) { return &parent; }
+  Object *getParentNF() { return &parent; }
   void setParent(Object *parentA);
   void setParent(Annot *parentA);
   GBool getOpen() const { return open; }
@@ -1305,6 +1324,7 @@ public:
   AnnotAppearanceCharacs *getAppearCharacs() { return appearCharacs; }
   LinkAction *getAction() { return action; }
   LinkAction *getAdditionalAction(AdditionalActionsType type);
+  LinkAction *getFormAdditionalAction(FormAdditionalActionsType type);
   Dict *getParent() { return parent; }
 
 private:
@@ -1389,6 +1409,174 @@ private:
 
   Activation *activation;  // 3DA
 };
+
+//------------------------------------------------------------------------
+// AnnotRichMedia
+//------------------------------------------------------------------------
+
+class AnnotRichMedia: public Annot {
+public:
+  class Params {
+  public:
+    Params(Dict *dict);
+    ~Params();
+
+    GooString* getFlashVars() const;
+
+  private:
+    // optional
+    GooString *flashVars; // FlashVars
+  };
+
+  class Instance {
+  public:
+    enum Type {
+      type3D,       // 3D
+      typeFlash,    // Flash
+      typeSound,    // Sound
+      typeVideo     // Video
+    };
+
+    Instance(Dict *dict);
+    ~Instance();
+
+    Type getType() const;
+    Params* getParams() const;
+
+  private:
+    // optional
+    Type type;     // Subtype
+    Params *params; // Params
+  };
+
+  class Configuration {
+  public:
+    enum Type {
+      type3D,       // 3D
+      typeFlash,    // Flash
+      typeSound,    // Sound
+      typeVideo     // Video
+    };
+
+    Configuration(Dict *dict);
+    ~Configuration();
+
+    Type getType() const;
+    GooString* getName() const;
+    int getInstancesCount() const;
+    Instance* getInstance(int index) const;
+
+  private:
+    // optional
+    Type type;            // Subtype
+    GooString *name;      // Name
+    Instance **instances; // Instances
+    int nInstances;
+  };
+
+  class Content;
+
+  class Asset {
+  public:
+    Asset();
+    ~Asset();
+
+    GooString* getName() const;
+    Object* getFileSpec() const;
+
+  private:
+    friend class AnnotRichMedia::Content;
+
+    GooString *name;
+    Object fileSpec;
+  };
+
+  class Content {
+  public:
+    Content(Dict *dict);
+    ~Content();
+
+    int getConfigurationsCount() const;
+    Configuration* getConfiguration(int index) const;
+
+    int getAssetsCount() const;
+    Asset* getAsset(int index) const;
+
+  private:
+    // optional
+    Configuration **configurations; // Configurations
+    int nConfigurations;
+
+    Asset **assets; // Assets
+    int nAssets;
+  };
+
+  class Activation {
+  public:
+    enum Condition {
+      conditionPageOpened,  // PO
+      conditionPageVisible, // PV
+      conditionUserAction   // XA
+    };
+
+    Activation(Dict *dict);
+
+    Condition getCondition() const;
+
+  private:
+    // optional
+    Condition condition;
+  };
+
+  class Deactivation {
+  public:
+    enum Condition {
+      conditionPageClosed,    // PC
+      conditionPageInvisible, // PI
+      conditionUserAction     // XD
+    };
+
+    Deactivation(Dict *dict);
+
+    Condition getCondition() const;
+
+  private:
+    // optional
+    Condition condition;
+  };
+
+  class Settings {
+  public:
+    Settings(Dict *dict);
+    ~Settings();
+
+    Activation* getActivation() const;
+    Deactivation* getDeactivation() const;
+
+  private:
+    // optional
+    Activation *activation;
+    Deactivation *deactivation;
+  };
+
+  AnnotRichMedia(PDFDoc *docA, PDFRectangle *rect);
+  AnnotRichMedia(PDFDoc *docA, Dict *dict, Object *obj);
+  ~AnnotRichMedia();
+
+  Content* getContent() const;
+
+  Settings* getSettings() const;
+
+private:
+  void initialize(PDFDoc *docA, Dict *dict);
+
+  // required
+  Content *content;     // RichMediaContent
+
+  // optional
+  Settings *settings;   // RichMediaSettings
+};
+
 
 //------------------------------------------------------------------------
 // Annots

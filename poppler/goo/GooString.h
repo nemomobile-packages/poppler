@@ -17,8 +17,10 @@
 //
 // Copyright (C) 2006 Kristian Høgsberg <krh@redhat.com>
 // Copyright (C) 2006 Krzysztof Kowalczyk <kkowalczyk@gmail.com>
-// Copyright (C) 2008-2010, 2012 Albert Astals Cid <aacid@kde.org>
-// Copyright (C) 2012 Fabio D'Urso <fabiodurso@hotmail.it>
+// Copyright (C) 2008-2010, 2012, 2014 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2012-2014 Fabio D'Urso <fabiodurso@hotmail.it>
+// Copyright (C) 2013 Jason Crain <jason@aquaticape.us>
+// Copyright (C) 2015 Adam Reichold <adam.reichold@t-online.de>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -37,8 +39,18 @@
 #include <stdlib.h> // for NULL
 #include "gtypes.h"
 
+#ifdef __clang__
+# define GOOSTRING_FORMAT __attribute__((__annotate__("gooformat")))
+#else
+# define GOOSTRING_FORMAT
+#endif
+
 class GooString {
 public:
+
+  // a special value telling that the length of the string is not given
+  // so it must be calculated from the strings
+  static const int CALC_STRING_LEN = -1;
 
   // Create an empty string.
   GooString();
@@ -86,26 +98,31 @@ public:
   //     ld, lx, lX, lo, lb, uld, ulx, ulX, ulo, ulb -- long, unsigned long
   //     lld, llx, llX, llo, llb, ulld, ullx, ullX, ullo, ullb
   //         -- long long, unsigned long long
-  //     f, g -- double
-  //     c -- char
+  //     f, g, gs -- floating point (float or double)
+  //         f  -- always prints trailing zeros (eg 1.0 with .2f will print 1.00)
+  //         g  -- omits trailing zeros and, if possible, the dot (eg 1.0 shows up as 1)
+  //         gs -- is like g, but treats <precision> as number of significant
+  //               digits to show (eg 0.0123 with .2gs will print 0.012)
+  //     c -- character (char, short or int)
   //     s -- string (char *)
   //     t -- GooString *
   //     w -- blank space; arg determines width
   // To get literal curly braces, use {{ or }}.
-  static GooString *format(const char *fmt, ...);
+  static GooString *format(const char *fmt, ...) GOOSTRING_FORMAT;
   static GooString *formatv(const char *fmt, va_list argList);
 
   // Destructor.
   ~GooString();
 
   // Get length.
-  int getLength() { return length; }
+  int getLength() const { return length; }
 
   // Get C string.
-  char *getCString() const { return s; }
+  char *getCString() { return s; }
+  const char *getCString() const { return s; }
 
   // Get <i>th character.
-  char getChar(int i) { return s[i]; }
+  char getChar(int i) const { return s[i]; }
 
   // Change <i>th character.
   void setChar(int i, char c) { s[i] = c; }
@@ -119,7 +136,7 @@ public:
   GooString *append(const char *str, int lengthA=CALC_STRING_LEN);
 
   // Append a formatted string.
-  GooString *appendf(const char *fmt, ...);
+  GooString *appendf(const char *fmt, ...) GOOSTRING_FORMAT;
   GooString *appendfv(const char *fmt, va_list argList);
 
   // Insert a character or string.
@@ -140,6 +157,9 @@ public:
   int cmp(const char *sA) const;
   int cmpN(const char *sA, int n) const;
 
+  // Return true if string ends with suffix
+  GBool endsWith(const char *suffix) const;
+
   GBool hasUnicodeMarker(void);
 
   // Sanitizes the string so that it does
@@ -152,14 +172,17 @@ private:
   GooString(const GooString &other);
   GooString& operator=(const GooString &other);
 
-  // you can tweak this number for a different speed/memory usage tradeoffs.
-  // In libc malloc() rounding is 16 so it's best to choose a value that
-  // results in sizeof(GooString) be a multiple of 16.
-  // 24 makes sizeof(GooString) to be 32.
-  static const int STR_STATIC_SIZE = 24;
-  // a special value telling that the length of the string is not given
-  // so it must be calculated from the strings
-  static const int CALC_STRING_LEN = -1;
+  // You can tweak the final object size for different time/space tradeoffs.
+  // In libc malloc(), rounding is 16 so it's best to choose a value that
+  // is a multiple of 16.
+  class MemoryLayout {
+      char c[sizeof(char*)];
+      int i;
+      char* s;
+  };
+
+  static const int STR_FINAL_SIZE = 32;
+  static const int STR_STATIC_SIZE = STR_FINAL_SIZE - sizeof(MemoryLayout) + sizeof(char*);
 
   int  roundedSize(int len);
 

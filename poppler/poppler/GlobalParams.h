@@ -13,18 +13,19 @@
 // All changes made under the Poppler project to this file are licensed
 // under GPL version 2 or later
 //
-// Copyright (C) 2005, 2007-2010, 2012 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2005, 2007-2010, 2012, 2015 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2005 Jonathan Blandford <jrb@redhat.com>
 // Copyright (C) 2006 Takashi Iwai <tiwai@suse.de>
 // Copyright (C) 2006 Kristian Høgsberg <krh@redhat.com>
 // Copyright (C) 2007 Krzysztof Kowalczyk <kkowalczyk@gmail.com>
 // Copyright (C) 2009 Jonathan Kew <jonathan_kew@sil.org>
 // Copyright (C) 2009 Petr Gajdos <pgajdos@novell.com>
-// Copyright (C) 2009, 2011, 2012 William Bader <williambader@hotmail.com>
+// Copyright (C) 2009, 2011, 2012, 2014, 2015 William Bader <williambader@hotmail.com>
 // Copyright (C) 2010 Hib Eris <hib@hiberis.nl>
 // Copyright (C) 2011 Pino Toscano <pino@kde.org>
 // Copyright (C) 2012 Adrian Johnson <ajohnson@redneon.com>
 // Copyright (C) 2012 Thomas Freitag <Thomas.Freitag@alfa.de>
+// Copyright (C) 2013 Jason Crain <jason@aquaticape.us>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -139,7 +140,14 @@ public:
 
   CharCode getMacRomanCharCode(char *charName);
 
-  Unicode mapNameToUnicode(const char *charName);
+  // Return Unicode values for character names.  Used for general text
+  // extraction.
+  Unicode mapNameToUnicodeText(const char *charName);
+
+  // Return Unicode values for character names.  Used for glyph
+  // lookups or text extraction with ZapfDingbats fonts.
+  Unicode mapNameToUnicodeAll(const char *charName);
+
   UnicodeMap *getResidentUnicodeMap(GooString *encodingName);
   FILE *getUnicodeMapFile(GooString *encodingName);
   FILE *findCMapFile(GooString *collection, GooString *cMapName);
@@ -158,26 +166,11 @@ public:
   GooList *getPSResidentFonts();
   PSFontParam16 *getPSResidentFont16(GooString *fontName, int wMode);
   PSFontParam16 *getPSResidentFontCC(GooString *collection, int wMode);
-  GBool getPSEmbedType1();
-  GBool getPSEmbedTrueType();
-  GBool getPSEmbedCIDPostScript();
-  GBool getPSEmbedCIDTrueType();
-  GBool getPSFontPassthrough();
-  GBool getPSPreload();
-  GBool getPSOPI();
-  GBool getPSASCIIHex();
-  GBool getPSBinary();
-  GBool getPSUncompressPreloadedImages();
-  double getPSRasterResolution();
-  GBool getPSRasterMono();
   GooString *getTextEncodingName();
   EndOfLineKind getTextEOL();
   GBool getTextPageBreaks();
   GBool getTextKeepTinyChars();
   GBool getEnableFreeType();
-  GBool getAntialias();
-  GBool getVectorAntialias();
-  GBool getAntialiasPrinting();
   GBool getStrokeAdjust();
   ScreenType getScreenType();
   int getScreenSize();
@@ -192,7 +185,6 @@ public:
   GBool getPrintCommands();
   GBool getProfileCommands();
   GBool getErrQuiet();
-  double getSplashResolution();
 
   CharCodeToUnicode *getCIDToUnicode(GooString *collection);
   CharCodeToUnicode *getUnicodeToUnicode(GooString *fontName);
@@ -212,27 +204,12 @@ public:
   void setPSShrinkLarger(GBool shrink);
   void setPSCenter(GBool center);
   void setPSLevel(PSLevel level);
-  void setPSEmbedType1(GBool embed);
-  void setPSEmbedTrueType(GBool embed);
-  void setPSEmbedCIDPostScript(GBool embed);
-  void setPSEmbedCIDTrueType(GBool embed);
-  void setPSFontPassthrough(GBool passthrough);
-  void setPSPreload(GBool preload);
-  void setPSOPI(GBool opi);
-  void setPSASCIIHex(GBool hex);
-  void setPSBinary(GBool binary);
-  void setPSUncompressPreloadedImages(GBool uncomp);
-  void setPSRasterResolution(double res);
-  void setPSRasterMono(GBool mono);
   void setTextEncoding(char *encodingName);
   GBool setTextEOL(char *s);
   void setTextPageBreaks(GBool pageBreaks);
   void setTextKeepTinyChars(GBool keep);
   GBool setEnableFreeType(char *s);
   GBool setDisableFreeTypeHinting(char *s);
-  GBool setAntialias(char *s);
-  GBool setVectorAntialias(char *s);
-  void setAntialiasPrinting(GBool print);
   void setStrokeAdjust(GBool strokeAdjust);
   void setScreenType(ScreenType st);
   void setScreenSize(int size);
@@ -248,6 +225,8 @@ public:
   void setProfileCommands(GBool profileCommandsA);
   void setErrQuiet(GBool errQuietA);
 
+  static GBool parseYesNo2(const char *token, GBool *flag);
+
   //----- security handlers
 
   void addSecurityHandler(XpdfSecurityHandler *handler);
@@ -256,7 +235,6 @@ public:
 private:
 
   void parseNameToUnicode(GooString *name);
-  GBool parseYesNo2(const char *token, GBool *flag);
   UnicodeMap *getUnicodeMap2(GooString *encodingName);
 
   void scanEncodingDirs();
@@ -271,8 +249,10 @@ private:
 
   //----- user-modifiable settings
 
-  NameToCharCode *		// mapping from char name to Unicode
-    nameToUnicode;
+  NameToCharCode *		// mapping from char name to Unicode for ZapfDingbats
+    nameToUnicodeZapfDingbats;
+  NameToCharCode *		// mapping from char name to Unicode for text
+    nameToUnicodeText;		// extraction
   GooHash *cidToUnicodes;		// files for mappings from char collections
 				//   to Unicode, indexed by collection name
 				//   [GooString]
@@ -309,21 +289,6 @@ private:
   GooList *psResidentFontsCC;	// 16-bit character collection fonts
 				//   resident in printer: collection name
 				//   mapped to font info [PSFontParam16]
-  GBool psEmbedType1;		// embed Type 1 fonts?
-  GBool psEmbedTrueType;	// embed TrueType fonts?
-  GBool psEmbedCIDPostScript;	// embed CID PostScript fonts?
-  GBool psEmbedCIDTrueType;	// embed CID TrueType fonts?
-  GBool psFontPassthrough;	// pass all fonts through as-is?
-  GBool psPreload;		// preload PostScript images and forms into
-				//   memory
-  GBool psOPI;			// generate PostScript OPI comments?
-  GBool psASCIIHex;		// use ASCIIHex instead of ASCII85?
-  GBool psBinary;		// use binary instead of hex
-  GBool psUncompressPreloadedImages;  // uncompress all preloaded images
-  double psRasterResolution;	// PostScript rasterization resolution (dpi)
-  GBool psRasterMono;		// true to do PostScript rasterization
-				//   in monochrome (gray); false to do it
-				//   in color (RGB/CMYK)
   GooString *textEncoding;	// encoding (unicodeMap) to use for text
 				//   output
   EndOfLineKind textEOL;	// type of EOL marker to use for text
@@ -332,9 +297,6 @@ private:
   GBool textKeepTinyChars;	// keep all characters in text output
   GBool enableFreeType;		// FreeType enable flag
   GBool disableFreeTypeHinting;	// FreeType disable hinting flag
-  GBool antialias;		// anti-aliasing enable flag
-  GBool vectorAntialias;	// vector anti-aliasing enable flag
-  GBool antialiasPrinting;	// allow anti-aliasing when printing
   GBool strokeAdjust;		// stroke adjustment enable flag
   ScreenType screenType;	// halftone screen type
   int screenSize;		// screen matrix size

@@ -13,14 +13,15 @@
 // All changes made under the Poppler project to this file are licensed
 // under GPL version 2 or later
 //
-// Copyright (C) 2005, 2008 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2005, 2008, 2015 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2006 Takashi Iwai <tiwai@suse.de>
 // Copyright (C) 2006 Kristian Høgsberg <krh@redhat.com>
 // Copyright (C) 2007 Julien Rebetez <julienr@svn.gnome.org>
 // Copyright (C) 2007 Jeff Muizelaar <jeff@infidigm.net>
 // Copyright (C) 2007 Koji Otani <sho@bbr.jp>
 // Copyright (C) 2011 Axel Strübing <axel.struebing@freenet.de>
-// Copyright (C) 2011, 2012 Adrian Johnson <ajohnson@redneon.com>
+// Copyright (C) 2011, 2012, 2014 Adrian Johnson <ajohnson@redneon.com>
+// Copyright (C) 2015 Jason Crain <jason@aquaticape.us>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -43,6 +44,7 @@ class Dict;
 class CMap;
 class CharCodeToUnicode;
 class FoFiTrueType;
+class PSOutputDev;
 struct GfxFontCIDWidths;
 struct Base14FontMapEntry;
 
@@ -237,9 +239,9 @@ public:
   // Return the writing mode (0=horizontal, 1=vertical).
   virtual int getWMode() { return 0; }
 
-  // Locate the font file for this font.  If <ps> is true, includes PS
+  // Locate the font file for this font.  If <ps> is not null, includes PS
   // printer-resident fonts.  Returns NULL on failure.
-  GfxFontLoc *locateFont(XRef *xref, GBool ps);
+  GfxFontLoc *locateFont(XRef *xref, PSOutputDev *ps);
 
   // Locate a Base-14 font file for a specified font name.
   static GfxFontLoc *locateBase14Font(GooString *base14Name);
@@ -262,6 +264,11 @@ public:
 
   // Return the name of the encoding
   GooString *getEncodingName() { return encodingName; }
+
+  // Return AGLFN names of ligatures in the Standard and Expert encodings
+  // for use with fonts that are not compatible with the Standard 14 fonts.
+  // http://sourceforge.net/adobe/aglfn/wiki/AGL%20Specification/
+  static const char *getAlternateName(const char *name);
 
 protected:
 
@@ -395,6 +402,7 @@ private:
 
   int mapCodeToGID(FoFiTrueType *ff, int cmapi,
     Unicode unicode, GBool wmode);
+  double getWidth(CID cid);	// Get width of a character.
 
   GooString *collection;		// collection name
   CMap *cMap;			// char code --> CID

@@ -19,6 +19,7 @@
 // Copyright (C) 2011 Vittal Aithal <vittal.aithal@cognidox.com>
 // Copyright (C) 2012, 2013 Adrian Johnson <ajohnson@redneon.com>
 // Copyright (C) 2012 Fabio D'Urso <fabiodurso@hotmail.it>
+// Copyright (C) 2013 Adrian Perez de Castro <aperez@igalia.com>
 // Copyright (C) 2013 Suzuki Toshiya <mpsuzuki@hiroshima-u.ac.jp>
 //
 // To see a description of the changes please see the Changelog file that
@@ -54,6 +55,7 @@
 #include "UTF.h"
 #include "Error.h"
 #include "DateInfo.h"
+#include "JSInfo.h"
 
 static void printInfoString(Dict *infoDict, const char *key, const char *text,
 			    UnicodeMap *uMap);
@@ -64,6 +66,7 @@ static int firstPage = 1;
 static int lastPage = 0;
 static GBool printBoxes = gFalse;
 static GBool printMetadata = gFalse;
+static GBool printJS = gFalse;
 static GBool rawDates = gFalse;
 static char textEncName[128] = "";
 static char ownerPassword[33] = "\001";
@@ -81,6 +84,8 @@ static const ArgDesc argDesc[] = {
    "print the page bounding boxes"},
   {"-meta",   argFlag,     &printMetadata,    0,
    "print the document metadata (XML)"},
+  {"-js",     argFlag,     &printJS,          0,
+   "print all JavaScript in the PDF"},
   {"-rawdates", argFlag,   &rawDates,         0,
    "print the undecoded date strings directly from the PDF file"},
   {"-enc",    argString,   textEncName,    sizeof(textEncName),
@@ -232,8 +237,12 @@ int main(int argc, char *argv[]) {
   info.free();
 
   // print tagging info
-  printf("Tagged:         %s\n",
-	 doc->getStructTreeRoot()->isDict() ? "yes" : "no");
+   printf("Tagged:         %s\n",
+	  (doc->getCatalog()->getMarkInfo() & Catalog::markInfoMarked) ? "yes" : "no");
+   printf("UserProperties: %s\n",
+	  (doc->getCatalog()->getMarkInfo() & Catalog::markInfoUserProperties) ? "yes" : "no");
+   printf("Suspects:       %s\n",
+	  (doc->getCatalog()->getMarkInfo() & Catalog::markInfoSuspects) ? "yes" : "no");
 
   // print form info
   switch (doc->getCatalog()->getFormType())
@@ -247,6 +256,13 @@ int main(int argc, char *argv[]) {
     case Catalog::XfaForm:
       printf("Form:           XFA\n");
       break;
+  }
+
+  // print javascript info
+  {
+    JSInfo jsInfo(doc, firstPage - 1);
+    jsInfo.scanJS(lastPage - firstPage + 1);
+    printf("JavaScript:     %s\n", jsInfo.containsJS() ? "yes" : "no");
   }
 
   // print page count
@@ -376,6 +392,13 @@ int main(int argc, char *argv[]) {
     fputs(metadata->getCString(), stdout);
     fputc('\n', stdout);
     delete metadata;
+  }
+
+  // print javascript
+  if (printJS) {
+    JSInfo jsInfo(doc, firstPage - 1);
+    fputs("\n", stdout);
+    jsInfo.scanJS(lastPage - firstPage + 1, stdout, uMap);
   }
 
   exitCode = 0;

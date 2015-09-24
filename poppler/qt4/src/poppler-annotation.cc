@@ -1,9 +1,9 @@
 /* poppler-annotation.cc: qt interface to poppler
- * Copyright (C) 2006, 2009, 2012, 2013 Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2006, 2009, 2012-2015 Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2006, 2008, 2010 Pino Toscano <pino@kde.org>
  * Copyright (C) 2012, Guillermo A. Amaral B. <gamaral@kde.org>
- * Copyright (C) 2012, 2013 Fabio D'Urso <fabiodurso@hotmail.it>
- * Copyright (C) 2012, Tobias Koenig <tokoe@kdab.com>
+ * Copyright (C) 2012-2014 Fabio D'Urso <fabiodurso@hotmail.it>
+ * Copyright (C) 2012, 2015, Tobias Koenig <tokoe@kdab.com>
  * Adapting code from
  *   Copyright (C) 2004 by Enrico Ros <eros.kde@email.it>
  *
@@ -366,7 +366,7 @@ AnnotPath * AnnotationPrivate::toAnnotPath(const QLinkedList<QPointF> &list) con
     return new AnnotPath(ac, count);
 }
 
-QList<Annotation*> AnnotationPrivate::findAnnotations(::Page *pdfPage, DocumentData *doc, int parentID)
+QList<Annotation*> AnnotationPrivate::findAnnotations(::Page *pdfPage, DocumentData *doc, const QSet<Annotation::SubType> &subtypes, int parentID)
 {
     Annots* annots = pdfPage->getAnnots();
     const uint numAnnotations = annots->getNumAnnots();
@@ -374,6 +374,20 @@ QList<Annotation*> AnnotationPrivate::findAnnotations(::Page *pdfPage, DocumentD
     {
         return QList<Annotation*>();
     }
+
+    const bool wantTextAnnotations = subtypes.isEmpty() || subtypes.contains(Annotation::AText);
+    const bool wantLineAnnotations = subtypes.isEmpty() || subtypes.contains(Annotation::ALine);
+    const bool wantGeomAnnotations = subtypes.isEmpty() || subtypes.contains(Annotation::AGeom);
+    const bool wantHighlightAnnotations = subtypes.isEmpty() || subtypes.contains(Annotation::AHighlight);
+    const bool wantStampAnnotations = subtypes.isEmpty() || subtypes.contains(Annotation::AStamp);
+    const bool wantInkAnnotations = subtypes.isEmpty() || subtypes.contains(Annotation::AInk);
+    const bool wantLinkAnnotations = subtypes.isEmpty() || subtypes.contains(Annotation::ALink);
+    const bool wantCaretAnnotations = subtypes.isEmpty() || subtypes.contains(Annotation::ACaret);
+    const bool wantFileAttachmentAnnotations = subtypes.isEmpty() || subtypes.contains(Annotation::AFileAttachment);
+    const bool wantSoundAnnotations = subtypes.isEmpty() || subtypes.contains(Annotation::ASound);
+    const bool wantMovieAnnotations = subtypes.isEmpty() || subtypes.contains(Annotation::AMovie);
+    const bool wantScreenAnnotations = subtypes.isEmpty() || subtypes.contains(Annotation::AScreen);
+    const bool wantWidgetAnnotations = subtypes.isEmpty() || subtypes.contains(Annotation::AWidget);
 
     // Create Annotation objects and tie to their native Annot
     QList<Annotation*> res;
@@ -383,7 +397,7 @@ QList<Annotation*> AnnotationPrivate::findAnnotations(::Page *pdfPage, DocumentD
         Annot * ann = annots->getAnnot( j );
         if ( !ann )
         {
-            error(errInternal, -1, "Annot %u is null", j);
+            error(errInternal, -1, "Annot {0:ud} is null", j);
             continue;
         }
 
@@ -405,36 +419,54 @@ QList<Annotation*> AnnotationPrivate::findAnnotations(::Page *pdfPage, DocumentD
         switch ( subType )
         {
             case Annot::typeText:
+                if (!wantTextAnnotations)
+                    continue;
                 annotation = new TextAnnotation(TextAnnotation::Linked);
                 break;
             case Annot::typeFreeText:
+                if (!wantTextAnnotations)
+                    continue;
                 annotation = new TextAnnotation(TextAnnotation::InPlace);
                 break;
             case Annot::typeLine:
+                if (!wantLineAnnotations)
+                    continue;
                 annotation = new LineAnnotation(LineAnnotation::StraightLine);
                 break;
             case Annot::typePolygon:
             case Annot::typePolyLine:
+                if (!wantLineAnnotations)
+                    continue;
                 annotation = new LineAnnotation(LineAnnotation::Polyline);
                 break;
             case Annot::typeSquare:
             case Annot::typeCircle:
+                if (!wantGeomAnnotations)
+                    continue;
                 annotation = new GeomAnnotation();
                 break;
             case Annot::typeHighlight:
             case Annot::typeUnderline:
             case Annot::typeSquiggly:
             case Annot::typeStrikeOut:
+                if (!wantHighlightAnnotations)
+                    continue;
                 annotation = new HighlightAnnotation();
                 break;
             case Annot::typeStamp:
+                if (!wantStampAnnotations)
+                    continue;
                 annotation = new StampAnnotation();
                 break;
             case Annot::typeInk:
+                if (!wantInkAnnotations)
+                    continue;
                 annotation = new InkAnnotation();
                 break;
             case Annot::typeLink: /* TODO: Move logic to getters */
             {
+                if (!wantLinkAnnotations)
+                    continue;
                 // parse Link params
                 AnnotLink * linkann = static_cast< AnnotLink * >( ann );
                 LinkAnnotation * l = new LinkAnnotation();
@@ -458,10 +490,14 @@ QList<Annotation*> AnnotationPrivate::findAnnotations(::Page *pdfPage, DocumentD
                 break;
             }
             case Annot::typeCaret:
+                if (!wantCaretAnnotations)
+                    continue;
                 annotation = new CaretAnnotation();
                 break;
             case Annot::typeFileAttachment: /* TODO: Move logic to getters */
             {
+                if (!wantFileAttachmentAnnotations)
+                    continue;
                 AnnotFileAttachment * attachann = static_cast< AnnotFileAttachment * >( ann );
                 FileAttachmentAnnotation * f = new FileAttachmentAnnotation();
                 annotation = f;
@@ -474,6 +510,8 @@ QList<Annotation*> AnnotationPrivate::findAnnotations(::Page *pdfPage, DocumentD
             }
             case Annot::typeSound: /* TODO: Move logic to getters */
             {
+                if (!wantSoundAnnotations)
+                    continue;
                 AnnotSound * soundann = static_cast< AnnotSound * >( ann );
                 SoundAnnotation * s = new SoundAnnotation();
                 annotation = s;
@@ -486,6 +524,8 @@ QList<Annotation*> AnnotationPrivate::findAnnotations(::Page *pdfPage, DocumentD
             }
             case Annot::typeMovie: /* TODO: Move logic to getters */
             {
+                if (!wantMovieAnnotations)
+                    continue;
                 AnnotMovie * movieann = static_cast< AnnotMovie * >( ann );
                 MovieAnnotation * m = new MovieAnnotation();
                 annotation = m;
@@ -501,6 +541,8 @@ QList<Annotation*> AnnotationPrivate::findAnnotations(::Page *pdfPage, DocumentD
             }
             case Annot::typeScreen:
             {
+                if (!wantScreenAnnotations)
+                    continue;
                 AnnotScreen * screenann = static_cast< AnnotScreen * >( ann );
                 if (!screenann->getAction())
                   continue;
@@ -522,8 +564,174 @@ QList<Annotation*> AnnotationPrivate::findAnnotations(::Page *pdfPage, DocumentD
             case Annot::typeUnknown:
                 continue; // special case for ignoring unknown annotations
             case Annot::typeWidget:
+                if (!wantWidgetAnnotations)
+                    continue;
                 annotation = new WidgetAnnotation();
                 break;
+            case Annot::typeRichMedia:
+            {
+                const AnnotRichMedia * annotRichMedia = static_cast< AnnotRichMedia * >( ann );
+
+                RichMediaAnnotation *richMediaAnnotation = new RichMediaAnnotation;
+
+                const AnnotRichMedia::Settings *annotSettings = annotRichMedia->getSettings();
+                if ( annotSettings ) {
+                    RichMediaAnnotation::Settings *settings = new RichMediaAnnotation::Settings;
+
+                    if ( annotSettings->getActivation() ) {
+                        RichMediaAnnotation::Activation *activation = new RichMediaAnnotation::Activation;
+
+                        switch ( annotSettings->getActivation()->getCondition() )
+                        {
+                            case AnnotRichMedia::Activation::conditionPageOpened:
+                                activation->setCondition( RichMediaAnnotation::Activation::PageOpened );
+                                break;
+                            case AnnotRichMedia::Activation::conditionPageVisible:
+                                activation->setCondition( RichMediaAnnotation::Activation::PageVisible );
+                                break;
+                            case AnnotRichMedia::Activation::conditionUserAction:
+                                activation->setCondition( RichMediaAnnotation::Activation::UserAction );
+                                break;
+                        }
+
+                        settings->setActivation( activation );
+                    }
+
+                    if ( annotSettings->getDeactivation() ) {
+                        RichMediaAnnotation::Deactivation *deactivation = new RichMediaAnnotation::Deactivation;
+
+                        switch ( annotSettings->getDeactivation()->getCondition() )
+                        {
+                            case AnnotRichMedia::Deactivation::conditionPageClosed:
+                                deactivation->setCondition( RichMediaAnnotation::Deactivation::PageClosed );
+                                break;
+                            case AnnotRichMedia::Deactivation::conditionPageInvisible:
+                                deactivation->setCondition( RichMediaAnnotation::Deactivation::PageInvisible );
+                                break;
+                            case AnnotRichMedia::Deactivation::conditionUserAction:
+                                deactivation->setCondition( RichMediaAnnotation::Deactivation::UserAction );
+                                break;
+                        }
+
+                        settings->setDeactivation( deactivation );
+                    }
+
+                    richMediaAnnotation->setSettings( settings );
+                }
+
+                const AnnotRichMedia::Content *annotContent = annotRichMedia->getContent();
+                if ( annotContent ) {
+                    RichMediaAnnotation::Content *content = new RichMediaAnnotation::Content;
+
+                    const int configurationsCount = annotContent->getConfigurationsCount();
+                    if ( configurationsCount > 0 ) {
+                        QList< RichMediaAnnotation::Configuration* > configurations;
+
+                        for ( int i = 0; i < configurationsCount; ++i ) {
+                            const AnnotRichMedia::Configuration *annotConfiguration = annotContent->getConfiguration( i );
+                            if ( !annotConfiguration )
+                                continue;
+
+                            RichMediaAnnotation::Configuration *configuration = new RichMediaAnnotation::Configuration;
+
+                            if ( annotConfiguration->getName() )
+                                configuration->setName( UnicodeParsedString( annotConfiguration->getName() ) );
+
+                            switch ( annotConfiguration->getType() )
+                            {
+                                case AnnotRichMedia::Configuration::type3D:
+                                    configuration->setType( RichMediaAnnotation::Configuration::Type3D );
+                                    break;
+                                case AnnotRichMedia::Configuration::typeFlash:
+                                    configuration->setType( RichMediaAnnotation::Configuration::TypeFlash );
+                                    break;
+                                case AnnotRichMedia::Configuration::typeSound:
+                                    configuration->setType( RichMediaAnnotation::Configuration::TypeSound );
+                                    break;
+                                case AnnotRichMedia::Configuration::typeVideo:
+                                    configuration->setType( RichMediaAnnotation::Configuration::TypeVideo );
+                                    break;
+                            }
+
+                            const int instancesCount = annotConfiguration->getInstancesCount();
+                            if ( instancesCount > 0 ) {
+                                QList< RichMediaAnnotation::Instance* > instances;
+
+                                for ( int j = 0; j < instancesCount; ++j ) {
+                                    const AnnotRichMedia::Instance *annotInstance = annotConfiguration->getInstance( j );
+                                    if ( !annotInstance )
+                                        continue;
+
+                                    RichMediaAnnotation::Instance *instance = new RichMediaAnnotation::Instance;
+
+                                    switch ( annotInstance->getType() )
+                                    {
+                                        case AnnotRichMedia::Instance::type3D:
+                                            instance->setType( RichMediaAnnotation::Instance::Type3D );
+                                            break;
+                                        case AnnotRichMedia::Instance::typeFlash:
+                                            instance->setType( RichMediaAnnotation::Instance::TypeFlash );
+                                            break;
+                                        case AnnotRichMedia::Instance::typeSound:
+                                            instance->setType( RichMediaAnnotation::Instance::TypeSound );
+                                            break;
+                                        case AnnotRichMedia::Instance::typeVideo:
+                                            instance->setType( RichMediaAnnotation::Instance::TypeVideo );
+                                            break;
+                                    }
+
+                                    const AnnotRichMedia::Params *annotParams = annotInstance->getParams();
+                                    if ( annotParams ) {
+                                        RichMediaAnnotation::Params *params = new RichMediaAnnotation::Params;
+
+                                        if ( annotParams->getFlashVars() )
+                                            params->setFlashVars( UnicodeParsedString( annotParams->getFlashVars() ) );
+
+                                        instance->setParams( params );
+                                    }
+
+                                    instances.append( instance );
+                                }
+
+                                configuration->setInstances( instances );
+                            }
+
+                            configurations.append( configuration );
+                        }
+
+                        content->setConfigurations( configurations );
+                    }
+
+                    const int assetsCount = annotContent->getAssetsCount();
+                    if ( assetsCount > 0 ) {
+                        QList< RichMediaAnnotation::Asset* > assets;
+
+                        for ( int i = 0; i < assetsCount; ++i ) {
+                            const AnnotRichMedia::Asset *annotAsset = annotContent->getAsset( i );
+                            if ( !annotAsset )
+                                continue;
+
+                            RichMediaAnnotation::Asset *asset = new RichMediaAnnotation::Asset;
+
+                            if ( annotAsset->getName() )
+                                asset->setName( UnicodeParsedString( annotAsset->getName() ) );
+
+                            FileSpec *fileSpec = new FileSpec( annotAsset->getFileSpec() );
+                            asset->setEmbeddedFile( new EmbeddedFile( *new EmbeddedFileData( fileSpec ) ) );
+
+                            assets.append( asset );
+                        }
+
+                        content->setAssets( assets );
+                    }
+
+                    richMediaAnnotation->setContent( content );
+                }
+
+                annotation = richMediaAnnotation;
+
+                break;
+            }
             default:
             {
 #define CASE_FOR_TYPE( thetype ) \
@@ -536,7 +744,7 @@ QList<Annotation*> AnnotationPrivate::findAnnotations(::Page *pdfPage, DocumentD
                     CASE_FOR_TYPE( TrapNet )
                     CASE_FOR_TYPE( Watermark )
                     CASE_FOR_TYPE( 3D )
-                    default: error(errUnimplemented, -1, "Annotation %u not supported", subType);
+                    default: error(errUnimplemented, -1, "Annotation {0:d} not supported", subType);
                 }
                 continue;
 #undef CASE_FOR_TYPE
@@ -1607,7 +1815,7 @@ QList<Annotation*> Annotation::revisions() const
     if ( !d->pdfAnnot->getHasRef() )
         return QList<Annotation*>();
 
-    return AnnotationPrivate::findAnnotations( d->pdfPage, d->parentDoc, d->pdfAnnot->getId() );
+    return AnnotationPrivate::findAnnotations( d->pdfPage, d->parentDoc, QSet<Annotation::SubType>(), d->pdfAnnot->getId() );
 }
 
 //END Annotation implementation
@@ -2062,7 +2270,7 @@ void TextAnnotation::setInplaceIntent( TextAnnotation::InplaceIntent intent )
 {
     Q_D( TextAnnotation );
 
-    if (d->pdfAnnot)
+    if (!d->pdfAnnot)
     {
         d->inplaceIntent = intent;
         return;
@@ -2898,6 +3106,7 @@ QList< HighlightAnnotation::Quad > HighlightAnnotationPrivate::fromQuadrilateral
     double MTX[6];
     fillTransformationMTX(MTX);
 
+    quads.reserve(quadsCount);
     for (int q = 0; q < quadsCount; ++q)
     {
         HighlightAnnotation::Quad quad;
@@ -3430,6 +3639,7 @@ QList< QLinkedList<QPointF> > InkAnnotation::inkPaths() const
 
     const int pathsNumber = inkann->getInkListLength();
     QList< QLinkedList<QPointF> > inkPaths;
+    inkPaths.reserve(pathsNumber);
     for (int m = 0; m < pathsNumber; ++m)
     {
         // transform each path in a list of normalized points ..
@@ -4390,6 +4600,455 @@ Link* WidgetAnnotation::additionalAction( AdditionalActionType type ) const
 {
     Q_D( const WidgetAnnotation );
     return d->additionalAction( type );
+}
+
+/** RichMediaAnnotation [Annotation] */
+class RichMediaAnnotation::Params::Private
+{
+    public:
+        Private() {}
+
+        QString flashVars;
+};
+
+RichMediaAnnotation::Params::Params()
+    : d( new Private )
+{
+}
+
+RichMediaAnnotation::Params::~Params()
+{
+}
+
+void RichMediaAnnotation::Params::setFlashVars( const QString &flashVars )
+{
+    d->flashVars = flashVars;
+}
+
+QString RichMediaAnnotation::Params::flashVars() const
+{
+    return d->flashVars;
+}
+
+
+class RichMediaAnnotation::Instance::Private
+{
+    public:
+        Private()
+            : params( 0 )
+        {
+        }
+
+        ~Private()
+        {
+            delete params;
+        }
+
+        RichMediaAnnotation::Instance::Type type;
+        RichMediaAnnotation::Params *params;
+};
+
+RichMediaAnnotation::Instance::Instance()
+    : d( new Private )
+{
+}
+
+RichMediaAnnotation::Instance::~Instance()
+{
+}
+
+void RichMediaAnnotation::Instance::setType( Type type )
+{
+    d->type = type;
+}
+
+RichMediaAnnotation::Instance::Type RichMediaAnnotation::Instance::type() const
+{
+    return d->type;
+}
+
+void RichMediaAnnotation::Instance::setParams( RichMediaAnnotation::Params *params )
+{
+    delete d->params;
+    d->params = params;
+}
+
+RichMediaAnnotation::Params* RichMediaAnnotation::Instance::params() const
+{
+    return d->params;
+}
+
+
+class RichMediaAnnotation::Configuration::Private
+{
+    public:
+        Private() {}
+        ~Private()
+        {
+            qDeleteAll( instances );
+            instances.clear();
+        }
+
+        RichMediaAnnotation::Configuration::Type type;
+        QString name;
+        QList< RichMediaAnnotation::Instance* > instances;
+};
+
+RichMediaAnnotation::Configuration::Configuration()
+    : d( new Private )
+{
+}
+
+RichMediaAnnotation::Configuration::~Configuration()
+{
+}
+
+void RichMediaAnnotation::Configuration::setType( Type type )
+{
+    d->type = type;
+}
+
+RichMediaAnnotation::Configuration::Type RichMediaAnnotation::Configuration::type() const
+{
+    return d->type;
+}
+
+void RichMediaAnnotation::Configuration::setName( const QString &name )
+{
+    d->name = name;
+}
+
+QString RichMediaAnnotation::Configuration::name() const
+{
+    return d->name;
+}
+
+void RichMediaAnnotation::Configuration::setInstances( const QList< RichMediaAnnotation::Instance* > &instances )
+{
+    qDeleteAll( d->instances );
+    d->instances.clear();
+
+    d->instances = instances;
+}
+
+QList< RichMediaAnnotation::Instance* > RichMediaAnnotation::Configuration::instances() const
+{
+    return d->instances;
+}
+
+
+class RichMediaAnnotation::Asset::Private
+{
+    public:
+        Private()
+            : embeddedFile( 0 )
+        {
+        }
+
+        ~Private()
+        {
+            delete embeddedFile;
+        }
+
+        QString name;
+        EmbeddedFile *embeddedFile;
+};
+
+RichMediaAnnotation::Asset::Asset()
+    : d( new Private )
+{
+}
+
+RichMediaAnnotation::Asset::~Asset()
+{
+}
+
+void RichMediaAnnotation::Asset::setName( const QString &name )
+{
+    d->name = name;
+}
+
+QString RichMediaAnnotation::Asset::name() const
+{
+    return d->name;
+}
+
+void RichMediaAnnotation::Asset::setEmbeddedFile( EmbeddedFile * embeddedFile )
+{
+    delete d->embeddedFile;
+    d->embeddedFile = embeddedFile;
+}
+
+EmbeddedFile* RichMediaAnnotation::Asset::embeddedFile() const
+{
+    return d->embeddedFile;
+}
+
+
+class RichMediaAnnotation::Content::Private
+{
+    public:
+        Private() {}
+        ~Private()
+        {
+            qDeleteAll( configurations );
+            configurations.clear();
+
+            qDeleteAll( assets );
+            assets.clear();
+        }
+
+        QList< RichMediaAnnotation::Configuration* > configurations;
+        QList< RichMediaAnnotation::Asset* > assets;
+};
+
+RichMediaAnnotation::Content::Content()
+    : d( new Private )
+{
+}
+
+RichMediaAnnotation::Content::~Content()
+{
+}
+
+void RichMediaAnnotation::Content::setConfigurations( const QList< RichMediaAnnotation::Configuration* > &configurations )
+{
+    qDeleteAll( d->configurations );
+    d->configurations.clear();
+
+    d->configurations = configurations;
+}
+
+QList< RichMediaAnnotation::Configuration* > RichMediaAnnotation::Content::configurations() const
+{
+    return d->configurations;
+}
+
+void RichMediaAnnotation::Content::setAssets( const QList< RichMediaAnnotation::Asset* > &assets )
+{
+    qDeleteAll( d->assets );
+    d->assets.clear();
+
+    d->assets = assets;
+}
+
+QList< RichMediaAnnotation::Asset* > RichMediaAnnotation::Content::assets() const
+{
+    return d->assets;
+}
+
+
+class RichMediaAnnotation::Activation::Private
+{
+    public:
+        Private()
+            : condition( RichMediaAnnotation::Activation::UserAction )
+        {
+        }
+
+        RichMediaAnnotation::Activation::Condition condition;
+};
+
+RichMediaAnnotation::Activation::Activation()
+    : d( new Private )
+{
+}
+
+RichMediaAnnotation::Activation::~Activation()
+{
+}
+
+void RichMediaAnnotation::Activation::setCondition( Condition condition )
+{
+    d->condition = condition;
+}
+
+RichMediaAnnotation::Activation::Condition RichMediaAnnotation::Activation::condition() const
+{
+    return d->condition;
+}
+
+
+class RichMediaAnnotation::Deactivation::Private : public QSharedData
+{
+    public:
+        Private()
+            : condition( RichMediaAnnotation::Deactivation::UserAction )
+        {
+        }
+
+        RichMediaAnnotation::Deactivation::Condition condition;
+};
+
+RichMediaAnnotation::Deactivation::Deactivation()
+    : d( new Private )
+{
+}
+
+RichMediaAnnotation::Deactivation::~Deactivation()
+{
+}
+
+void RichMediaAnnotation::Deactivation::setCondition( Condition condition )
+{
+    d->condition = condition;
+}
+
+RichMediaAnnotation::Deactivation::Condition RichMediaAnnotation::Deactivation::condition() const
+{
+    return d->condition;
+}
+
+
+class RichMediaAnnotation::Settings::Private : public QSharedData
+{
+    public:
+        Private()
+            : activation( 0 ), deactivation( 0 )
+        {
+        }
+
+        RichMediaAnnotation::Activation *activation;
+        RichMediaAnnotation::Deactivation *deactivation;
+};
+
+RichMediaAnnotation::Settings::Settings()
+    : d( new Private )
+{
+}
+
+RichMediaAnnotation::Settings::~Settings()
+{
+}
+
+void RichMediaAnnotation::Settings::setActivation( RichMediaAnnotation::Activation *activation )
+{
+    delete d->activation;
+    d->activation = activation;
+}
+
+RichMediaAnnotation::Activation* RichMediaAnnotation::Settings::activation() const
+{
+    return d->activation;
+}
+
+void RichMediaAnnotation::Settings::setDeactivation( RichMediaAnnotation::Deactivation *deactivation )
+{
+    delete d->deactivation;
+    d->deactivation = deactivation;
+}
+
+RichMediaAnnotation::Deactivation* RichMediaAnnotation::Settings::deactivation() const
+{
+    return d->deactivation;
+}
+
+
+class RichMediaAnnotationPrivate : public AnnotationPrivate
+{
+    public:
+        RichMediaAnnotationPrivate()
+            : settings( 0 ), content( 0 )
+        {
+        }
+
+        ~RichMediaAnnotationPrivate()
+        {
+            delete settings;
+            delete content;
+        }
+
+        Annotation * makeAlias()
+        {
+            return new RichMediaAnnotation( *this );
+        }
+
+        Annot* createNativeAnnot( ::Page *destPage, DocumentData *doc )
+        {
+            Q_UNUSED( destPage );
+            Q_UNUSED( doc );
+
+            return 0;
+        }
+
+        RichMediaAnnotation::Settings *settings;
+        RichMediaAnnotation::Content *content;
+};
+
+RichMediaAnnotation::RichMediaAnnotation()
+    : Annotation( *new RichMediaAnnotationPrivate() )
+{
+}
+
+RichMediaAnnotation::RichMediaAnnotation( RichMediaAnnotationPrivate &dd )
+    : Annotation( dd )
+{
+}
+
+RichMediaAnnotation::RichMediaAnnotation( const QDomNode & node )
+    : Annotation( *new RichMediaAnnotationPrivate(), node )
+{
+    // loop through the whole children looking for a 'richMedia' element
+    QDomNode subNode = node.firstChild();
+    while( subNode.isElement() )
+    {
+        QDomElement e = subNode.toElement();
+        subNode = subNode.nextSibling();
+        if ( e.tagName() != "richMedia" )
+            continue;
+
+        // loading complete
+        break;
+    }
+}
+
+RichMediaAnnotation::~RichMediaAnnotation()
+{
+}
+
+void RichMediaAnnotation::store( QDomNode & node, QDomDocument & document ) const
+{
+    // store base annotation properties
+    storeBaseAnnotationProperties( node, document );
+
+    // create [richMedia] element
+    QDomElement richMediaElement = document.createElement( "richMedia" );
+    node.appendChild( richMediaElement );
+}
+
+Annotation::SubType RichMediaAnnotation::subType() const
+{
+    return ARichMedia;
+}
+
+void RichMediaAnnotation::setSettings( RichMediaAnnotation::Settings *settings )
+{
+    Q_D( RichMediaAnnotation );
+
+    delete d->settings;
+    d->settings = settings;
+}
+
+RichMediaAnnotation::Settings* RichMediaAnnotation::settings() const
+{
+    Q_D( const RichMediaAnnotation );
+
+    return d->settings;
+}
+
+void RichMediaAnnotation::setContent( RichMediaAnnotation::Content *content )
+{
+    Q_D( RichMediaAnnotation );
+
+    delete d->content;
+    d->content = content;
+}
+
+RichMediaAnnotation::Content* RichMediaAnnotation::content() const
+{
+    Q_D( const RichMediaAnnotation );
+
+    return d->content;
 }
 
 //BEGIN utility annotation functions
