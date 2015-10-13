@@ -169,10 +169,13 @@
 #define PACKAGE_VERSION "${POPPLER_VERSION}"
 
 /* Poppler data dir */
-#define POPPLER_DATADIR "${CMAKE_INSTALL_PREFIX}/share/poppler"
+#define POPPLER_DATADIR "${POPPLER_DATADIR}"
 
 /* Support for curl based doc builder is compiled in. */
 #cmakedefine POPPLER_HAS_CURL_SUPPORT 1
+
+/* Include support for CMYK rasterization */
+#cmakedefine SPLASH_CMYK 1
 
 /* Define to 1 if you have the ANSI C header files. */
 #define STDC_HEADERS 1

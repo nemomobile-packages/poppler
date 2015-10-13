@@ -29,7 +29,7 @@ GQuark poppler_error_quark (void);
 
 /**
  * PopplerError:
- * @POPPLER_ERROR_INVALID: Generic error when a document opration fails
+ * @POPPLER_ERROR_INVALID: Generic error when a document operation fails
  * @POPPLER_ERROR_ENCRYPTED: Document is encrypted
  * @POPPLER_ERROR_OPEN_FILE: File could not be opened for writing when saving document
  * @POPPLER_ERROR_BAD_CATALOG: Failed to read the document catalog
@@ -155,6 +155,7 @@ typedef enum /*< flags >*/
 
 /**
  * PopplerFindFlags:
+ * @POPPLER_FIND_DEFAULT: use default search settings
  * @POPPLER_FIND_CASE_SENSITIVE: do case sensitive search
  * @POPPLER_FIND_BACKWARDS: search backwards
  * @POPPLER_FIND_WHOLE_WORDS_ONLY: search only whole words
@@ -175,6 +176,7 @@ typedef struct _PopplerDocument            PopplerDocument;
 typedef struct _PopplerIndexIter           PopplerIndexIter;
 typedef struct _PopplerFontsIter           PopplerFontsIter;
 typedef struct _PopplerLayersIter          PopplerLayersIter;
+typedef struct _PopplerPoint               PopplerPoint;
 typedef struct _PopplerRectangle           PopplerRectangle;
 typedef struct _PopplerTextAttributes      PopplerTextAttributes;
 typedef struct _PopplerColor               PopplerColor;
@@ -197,12 +199,28 @@ typedef struct _PopplerMedia               PopplerMedia;
 typedef struct _PopplerAnnot               PopplerAnnot;
 typedef struct _PopplerAnnotMarkup         PopplerAnnotMarkup;
 typedef struct _PopplerAnnotText           PopplerAnnotText;
+typedef struct _PopplerAnnotTextMarkup     PopplerAnnotTextMarkup;
 typedef struct _PopplerAnnotFreeText       PopplerAnnotFreeText;
 typedef struct _PopplerAnnotFileAttachment PopplerAnnotFileAttachment;
 typedef struct _PopplerAnnotMovie          PopplerAnnotMovie;
 typedef struct _PopplerAnnotScreen         PopplerAnnotScreen;
 typedef struct _PopplerAnnotCalloutLine    PopplerAnnotCalloutLine;
+typedef struct _PopplerAnnotLine           PopplerAnnotLine;
+typedef struct _PopplerAnnotCircle         PopplerAnnotCircle;
+typedef struct _PopplerAnnotSquare         PopplerAnnotSquare;
+typedef struct _PopplerQuadrilateral       PopplerQuadrilateral;
+typedef struct _PopplerStructureElement    PopplerStructureElement;
+typedef struct _PopplerStructureElementIter PopplerStructureElementIter;
+typedef struct _PopplerTextSpan            PopplerTextSpan;
 
+/**
+ * PopplerBackend:
+ * @POPPLER_BACKEND_UNKNOWN: Unknown backend
+ * @POPPLER_BACKEND_SPLASH: Splash backend
+ * @POPPLER_BACKEND_CAIRO: Cairo backend
+ *
+ * Backend codes returned by poppler_get_backend().
+ */
 typedef enum
 {
   POPPLER_BACKEND_UNKNOWN,
@@ -227,5 +245,6 @@ G_END_DECLS
 #include "poppler-date.h"
 #include "poppler-movie.h"
 #include "poppler-media.h"
+#include "poppler-structure-element.h"
 
 #endif /* __POPPLER_GLIB_H__ */

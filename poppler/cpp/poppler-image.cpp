@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2010-2011, Pino Toscano <pino@kde.org>
+ * Copyright (C) 2013 Adrian Johnson <ajohnson@redneon.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,15 +32,13 @@
 #if defined(ENABLE_LIBTIFF)
 #include "TiffWriter.h"
 #endif
-#include "PNMWriter.h"
+#include "NetPBMWriter.h"
 
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
 #include <memory>
 #include <vector>
-
-using poppler::PNMWriter;
 
 namespace {
 
@@ -69,17 +68,17 @@ int calc_bytes_per_row(int width, poppler::image::format_enum format)
     return 0;
 }
 
-PNMWriter::OutFormat pnm_format(poppler::image::format_enum format)
+NetPBMWriter::Format pnm_format(poppler::image::format_enum format)
 {
     switch (format) {
     case poppler::image::format_invalid: // unused, anyway
     case poppler::image::format_mono:
-        return PNMWriter::PBM;
+        return NetPBMWriter::MONOCHROME;
     case poppler::image::format_rgb24:
     case poppler::image::format_argb32:
-        return PNMWriter::PPM;
+        return NetPBMWriter::RGB;
     }
-    return PNMWriter::PPM;
+    return NetPBMWriter::RGB;
 }
 
 }
@@ -366,7 +365,7 @@ bool image::save(const std::string &file_name, const std::string &out_format, in
     }
 #endif
     else if (fmt == "pnm") {
-        w.reset(new PNMWriter(pnm_format(d->format)));
+        w.reset(new NetPBMWriter(pnm_format(d->format)));
     }
     if (!w.get()) {
         return false;

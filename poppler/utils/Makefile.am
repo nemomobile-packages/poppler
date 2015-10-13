@@ -1,52 +1,18 @@
-if BUILD_SPLASH_OUTPUT
+AM_LDFLAGS = @auto_import_flags@
 
-pdftoppm_SOURCES =				\
-	pdftoppm.cc				\
-	$(common)
-
-pdftoppm_binary = pdftoppm
-
-pdftoppm_manpage = pdftoppm.1
-
-endif
-
-INCLUDES =					\
+AM_CPPFLAGS =					\
 	-I$(top_srcdir)				\
 	-I$(top_srcdir)/goo			\
 	-I$(top_srcdir)/utils			\
 	-I$(top_srcdir)/poppler			\
-	$(UTILS_CFLAGS)				\
-	$(PDFTOCAIRO_CFLAGS)
+	$(UTILS_CFLAGS)
 
 LDADD =						\
+	libparseargs.la				\
 	$(top_builddir)/poppler/libpoppler.la	\
 	$(UTILS_LIBS)
 
-if BUILD_CAIRO_OUTPUT
-
-pdftocairo_SOURCES =				\
-	pdftocairo.cc				\
-	$(common)
-
-if USE_CMS
-PDFTOCAIRO_CFLAGS += $(LCMS_CFLAGS)
-PDFTOCAIRO_LIBS += $(LCMS_LIBS)
-endif
-
-pdftocairo_LDADD =				\
-	$(top_builddir)/poppler/libpoppler-cairo.la \
-	$(LDADD)				\
-	$(PDFTOCAIRO_LIBS)			\
-	$(PTHREAD_LIBS)
-
-
-pdftocairo_binary = pdftocairo
-
-pdftocairo_manpage = pdftocairo.1
-
-endif
-
-AM_LDFLAGS = @auto_import_flags@
+if BUILD_UTILS
 
 bin_PROGRAMS =					\
 	pdfdetach				\
@@ -57,9 +23,15 @@ bin_PROGRAMS =					\
 	pdftotext				\
 	pdftohtml				\
 	pdfseparate				\
-	pdfunite				\
-	$(pdftoppm_binary)			\
-	$(pdftocairo_binary)
+	pdfunite
+
+if BUILD_SPLASH_OUTPUT
+bin_PROGRAMS += pdftoppm
+endif
+
+if BUILD_CAIRO_OUTPUT
+bin_PROGRAMS += pdftocairo
+endif
 
 dist_man1_MANS =				\
 	pdfdetach.1				\
@@ -70,41 +42,45 @@ dist_man1_MANS =				\
 	pdftotext.1				\
 	pdftohtml.1				\
 	pdfseparate.1				\
-	pdfunite.1				\
-	$(pdftoppm_manpage)			\
-	$(pdftocairo_manpage)
+	pdfunite.1
 
-common = parseargs.cc parseargs.h
+if BUILD_SPLASH_OUTPUT
+dist_man1_MANS += pdftoppm.1
+endif
 
-pdfdetach_SOURCES = 				\
-	pdfdetach.cc				\
-	$(common)
+if BUILD_CAIRO_OUTPUT
+dist_man1_MANS += pdftocairo.1
+endif
+
+endif # if BUILD_UTILS
+
+pdfdetach_SOURCES =				\
+	pdfdetach.cc
 
 pdffonts_SOURCES =				\
-	pdffonts.cc				\
-	$(common)
+	pdffonts.cc
 
 pdfimages_SOURCES =				\
 	pdfimages.cc				\
 	ImageOutputDev.cc			\
 	ImageOutputDev.h			\
-	$(common)
+	JSInfo.cc				\
+	JSInfo.h
 
 pdfinfo_SOURCES =				\
 	pdfinfo.cc				\
 	printencodings.cc			\
 	printencodings.h			\
-	$(common)
+	JSInfo.cc				\
+	JSInfo.h
 
 pdftops_SOURCES =				\
-	pdftops.cc				\
-	$(common)
+	pdftops.cc
 
 pdftotext_SOURCES =				\
 	pdftotext.cc				\
 	printencodings.cc			\
-	printencodings.h			\
-	$(common)
+	printencodings.h
 
 pdftohtml_SOURCES =				\
 	pdftohtml.cc				\
@@ -114,22 +90,49 @@ pdftohtml_SOURCES =				\
 	HtmlLinks.h				\
 	HtmlOutputDev.cc			\
 	HtmlOutputDev.h				\
-	HtmlUtils.h				\
-	$(common)
+	HtmlUtils.h
 
 # HtmlOutputDev uses goo/PNGWriter.h that may depend on libpng header
-pdftohtml_CXXFLAGS = $(AM_CXXFLAGS)
 if BUILD_LIBPNG
-pdftohtml_CXXFLAGS += $(LIBPNG_CFLAGS)
+pdftohtml_CXXFLAGS = $(AM_CXXFLAGS) $(LIBPNG_CFLAGS)
 endif
 
 pdfseparate_SOURCES =				\
-	pdfseparate.cc				\
-	$(common)
+	pdfseparate.cc
 
 pdfunite_SOURCES =				\
-	pdfunite.cc				\
-	$(common)
+	pdfunite.cc
+
+pdftoppm_SOURCES =				\
+	pdftoppm.cc
+
+pdftocairo_SOURCES =				\
+	pdftocairo.cc				\
+	pdftocairo-win32.cc			\
+	pdftocairo-win32.h
+
+if BUILD_CAIRO_OUTPUT
+if USE_CMS
+PDFTOCAIRO_CFLAGS += $(LCMS_CFLAGS)
+PDFTOCAIRO_LIBS += $(LCMS_LIBS)
+endif
+endif
+
+pdftocairo_LDADD =					\
+	$(top_builddir)/poppler/libpoppler-cairo.la	\
+	$(LDADD)					\
+	$(PDFTOCAIRO_LIBS)				\
+	$(PTHREAD_LIBS)
+
+pdftocairo_CPPFLAGS =				\
+	$(AM_CPPFLAGS)				\
+	$(PDFTOCAIRO_CFLAGS)
+
+noinst_LTLIBRARIES = libparseargs.la
+
+libparseargs_la_SOURCES =			\
+	parseargs.cc				\
+	parseargs.h
 
 # Yay, automake!  It should be able to figure out that it has to dist
 # pdftoppm.1, but nooo.  So we just add it here.

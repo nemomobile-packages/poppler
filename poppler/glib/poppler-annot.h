@@ -38,6 +38,11 @@ G_BEGIN_DECLS
 #define POPPLER_ANNOT_TEXT(obj)              (G_TYPE_CHECK_INSTANCE_CAST ((obj), POPPLER_TYPE_ANNOT_TEXT, PopplerAnnotText))
 #define POPPLER_IS_ANNOT_TEXT(obj)           (G_TYPE_CHECK_INSTANCE_TYPE ((obj), POPPLER_TYPE_ANNOT_TEXT))
 
+#define POPPLER_TYPE_ANNOT_TEXT_MARKUP       (poppler_annot_text_markup_get_type ())
+#define POPPLER_ANNOT_TEXT_MARKUP(obj)       (G_TYPE_CHECK_INSTANCE_CAST ((obj), POPPLER_TYPE_ANNOT_TEXT_MARKUP, PopplerAnnotTextMarkup))
+#define POPPLER_IS_ANNOT_TEXT_MARKUP(obj)    (G_TYPE_CHECK_INSTANCE_TYPE ((obj), POPPLER_TYPE_ANNOT_TEXT_MARKUP))
+
+
 #define POPPLER_TYPE_ANNOT_FREE_TEXT         (poppler_annot_free_text_get_type ())
 #define POPPLER_ANNOT_FREE_TEXT(obj)         (G_TYPE_CHECK_INSTANCE_CAST ((obj), POPPLER_TYPE_ANNOT_FREE_TEXT, PopplerAnnotFreeText))
 #define POPPLER_IS_ANNOT_FREE_TEXT(obj)      (G_TYPE_CHECK_INSTANCE_TYPE ((obj), POPPLER_TYPE_ANNOT_FREE_TEXT))
@@ -54,8 +59,19 @@ G_BEGIN_DECLS
 #define POPPLER_ANNOT_SCREEN(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), POPPLER_TYPE_ANNOT_SCREEN, PopplerAnnotScreen))
 #define POPPLER_IS_ANNOT_SCREEN(obj)         (G_TYPE_CHECK_INSTANCE_TYPE ((obj), POPPLER_TYPE_ANNOT_SCREEN))
 
+#define POPPLER_TYPE_ANNOT_LINE              (poppler_annot_line_get_type ())
+#define POPPLER_ANNOT_LINE(obj)              (G_TYPE_CHECK_INSTANCE_CAST ((obj), POPPLER_TYPE_ANNOT_LINE, PopplerAnnotLine))
+#define POPPLER_IS_ANNOT_LINE(obj)           (G_TYPE_CHECK_INSTANCE_TYPE ((obj), POPPLER_TYPE_ANNOT_LINE))
+
 #define POPPLER_TYPE_ANNOT_CALLOUT_LINE      (poppler_annot_callout_line_get_type ())
 
+#define POPPLER_TYPE_ANNOT_CIRCLE            (poppler_annot_circle_get_type ())
+#define POPPLER_ANNOT_CIRCLE(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), POPPLER_TYPE_ANNOT_CIRCLE, PopplerAnnotCircle))
+#define POPPLER_IS_ANNOT_CIRCLE(obj)         (G_TYPE_CHECK_INSTANCE_TYPE ((obj), POPPLER_TYPE_ANNOT_CIRCLE))
+
+#define POPPLER_TYPE_ANNOT_SQUARE            (poppler_annot_square_get_type ())
+#define POPPLER_ANNOT_SQUARE(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), POPPLER_TYPE_ANNOT_SQUARE, PopplerAnnotSquare))
+#define POPPLER_IS_ANNOT_SQUARE(obj)         (G_TYPE_CHECK_INSTANCE_TYPE ((obj), POPPLER_TYPE_ANNOT_SQUARE))
 
 typedef enum
 {
@@ -168,6 +184,10 @@ PopplerColor                 *poppler_annot_get_color                          (
 void                          poppler_annot_set_color                          (PopplerAnnot *poppler_annot,
 										PopplerColor *poppler_color);
 gint                          poppler_annot_get_page_index                     (PopplerAnnot *poppler_annot);
+void                          poppler_annot_get_rectangle                      (PopplerAnnot     *poppler_annot,
+										PopplerRectangle *poppler_rect);
+void                          poppler_annot_set_rectangle                      (PopplerAnnot     *poppler_annot,
+										PopplerRectangle *poppler_rect);
 
 /* PopplerAnnotMarkup */
 GType                         poppler_annot_markup_get_type                    (void) G_GNUC_CONST;
@@ -182,6 +202,8 @@ void                          poppler_annot_markup_set_popup_is_open           (
 										gboolean            is_open);
 gboolean                      poppler_annot_markup_get_popup_rectangle         (PopplerAnnotMarkup *poppler_annot,
 										PopplerRectangle   *poppler_rect);
+void                          poppler_annot_markup_set_popup_rectangle         (PopplerAnnotMarkup *poppler_annot,
+                                                                                PopplerRectangle   *poppler_rect);
 gdouble                       poppler_annot_markup_get_opacity                 (PopplerAnnotMarkup *poppler_annot);
 void                          poppler_annot_markup_set_opacity                 (PopplerAnnotMarkup *poppler_annot,
 										gdouble             opacity);
@@ -202,6 +224,24 @@ void                          poppler_annot_text_set_icon                      (
 										const gchar      *icon);
 PopplerAnnotTextState         poppler_annot_text_get_state                     (PopplerAnnotText *poppler_annot);
 
+/* PopplerAnnotTextMarkup */
+GType                         poppler_annot_text_markup_get_type               (void) G_GNUC_CONST;
+PopplerAnnot                 *poppler_annot_text_markup_new_highlight          (PopplerDocument  *doc,
+                                                                                PopplerRectangle *rect,
+                                                                                GArray           *quadrilaterals);
+PopplerAnnot                 *poppler_annot_text_markup_new_squiggly           (PopplerDocument  *doc,
+                                                                                PopplerRectangle *rect,
+                                                                                GArray           *quadrilaterals);
+PopplerAnnot                 *poppler_annot_text_markup_new_strikeout          (PopplerDocument  *doc,
+                                                                                PopplerRectangle *rect,
+                                                                                GArray           *quadrilaterals);
+PopplerAnnot                 *poppler_annot_text_markup_new_underline          (PopplerDocument  *doc,
+                                                                                PopplerRectangle *rect,
+                                                                                GArray           *quadrilaterals);
+void                          poppler_annot_text_markup_set_quadrilaterals     (PopplerAnnotTextMarkup *poppler_annot,
+										GArray                 *quadrilaterals);
+GArray                       *poppler_annot_text_markup_get_quadrilaterals     (PopplerAnnotTextMarkup *poppler_annot);
+
 /* PopplerAnnotFreeText */
 GType                         poppler_annot_free_text_get_type                 (void) G_GNUC_CONST;
 PopplerAnnotFreeTextQuadding  poppler_annot_free_text_get_quadding             (PopplerAnnotFreeText *poppler_annot);
@@ -221,11 +261,37 @@ PopplerMovie                 *poppler_annot_movie_get_movie                    (
 GType                         poppler_annot_screen_get_type                    (void) G_GNUC_CONST;
 PopplerAction                *poppler_annot_screen_get_action                  (PopplerAnnotScreen *poppler_annot);
 
+/* PopplerAnnotLine */
+GType                         poppler_annot_line_get_type                      (void) G_GNUC_CONST;
+PopplerAnnot                 *poppler_annot_line_new                           (PopplerDocument  *doc,
+                                                                                PopplerRectangle *rect,
+                                                                                PopplerPoint     *start,
+                                                                                PopplerPoint     *end);
+void                          poppler_annot_line_set_vertices                  (PopplerAnnotLine *poppler_annot,
+										PopplerPoint     *start,
+										PopplerPoint     *end);
+
 /* PopplerAnnotCalloutLine */
 GType                         poppler_annot_callout_line_get_type              (void) G_GNUC_CONST;
 PopplerAnnotCalloutLine      *poppler_annot_callout_line_new                   (void);
 PopplerAnnotCalloutLine      *poppler_annot_callout_line_copy                  (PopplerAnnotCalloutLine *callout);
 void                          poppler_annot_callout_line_free                  (PopplerAnnotCalloutLine *callout);
+
+/* PopplerAnnotCircle */
+GType                         poppler_annot_circle_get_type                    (void) G_GNUC_CONST;
+PopplerAnnot                 *poppler_annot_circle_new                         (PopplerDocument    *doc,
+                                                                                PopplerRectangle   *rect);
+void                          poppler_annot_circle_set_interior_color          (PopplerAnnotCircle *poppler_annot,
+										PopplerColor       *poppler_color);
+PopplerColor                 *poppler_annot_circle_get_interior_color          (PopplerAnnotCircle *poppler_annot);
+
+/* PopplerAnnotGeometry */
+GType                         poppler_annot_square_get_type                    (void) G_GNUC_CONST;
+PopplerAnnot                 *poppler_annot_square_new                         (PopplerDocument    *doc,
+                                                                                PopplerRectangle   *rect);
+void                          poppler_annot_square_set_interior_color          (PopplerAnnotSquare *poppler_annot,
+										PopplerColor       *poppler_color);
+PopplerColor                 *poppler_annot_square_get_interior_color          (PopplerAnnotSquare *poppler_annot);
 
 G_END_DECLS
 

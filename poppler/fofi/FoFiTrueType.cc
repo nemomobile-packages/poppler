@@ -16,10 +16,13 @@
 // Copyright (C) 2006 Takashi Iwai <tiwai@suse.de>
 // Copyright (C) 2007 Koji Otani <sho@bbr.jp>
 // Copyright (C) 2007 Carlos Garcia Campos <carlosgc@gnome.org>
-// Copyright (C) 2008, 2009, 2012 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2008, 2009, 2012, 2014, 2015 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2008 Tomas Are Haavet <tomasare@gmail.com>
 // Copyright (C) 2012 Suzuki Toshiya <mpsuzuki@hiroshima-u.ac.jp>
 // Copyright (C) 2012 Adrian Johnson <ajohnson@redneon.com>
+// Copyright (C) 2014 Thomas Freitag <Thomas.Freitag@alfa.de>
+// Copyright (C) 2015 Aleksei Volkov <Aleksei Volkov>
+// Copyright (C) 2015 William Bader <williambader@hotmail.com>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -37,6 +40,7 @@
 #include <algorithm>
 #include "goo/gtypes.h"
 #include "goo/gmem.h"
+#include "goo/GooLikely.h"
 #include "goo/GooString.h"
 #include "goo/GooHash.h"
 #include "FoFiType1C.h"
@@ -935,7 +939,7 @@ void FoFiTrueType::cvtSfnts(FoFiOutputFunc outputFunc,
   GBool ok;
   Guint checksum;
   int nNewTables;
-  int glyfTableLen, length, pos, glyfPos, i, j, k;
+  int glyfTableLen, length, pos, glyfPos, i, j, k, vmtxTabLength;
   Guchar vheaTab[36] = {
     0, 1, 0, 0,			// table version number
     0, 0,			// ascent
@@ -1046,6 +1050,7 @@ void FoFiTrueType::cvtSfnts(FoFiOutputFunc outputFunc,
     }
   }
   vmtxTab = NULL; // make gcc happy
+  vmtxTabLength = 0;
   advance = 0; // make gcc happy
   if (needVerticalMetrics) {
     needVhea = seekTable("vhea") < 0;
@@ -1103,6 +1108,7 @@ void FoFiTrueType::cvtSfnts(FoFiOutputFunc outputFunc,
 	checksum = computeTableChecksum(vheaTab, length);
       } else if (needVerticalMetrics && i == t42VmtxTable) {
 	length = 4 + (nGlyphs - 1) * 2;
+	vmtxTabLength = length;
 	vmtxTab = (Guchar *)gmalloc(length);
 	vmtxTab[0] = advance / 256;
 	vmtxTab[1] = advance % 256;
@@ -1217,8 +1223,16 @@ void FoFiTrueType::cvtSfnts(FoFiOutputFunc outputFunc,
 	  dumpString(file + tables[j].offset, tables[j].len,
 		     outputFunc, outputStream);
 	} else if (needVerticalMetrics && i == t42VheaTable) {
+	  if (unlikely(length > (int)sizeof(vheaTab))) {
+	    error(errSyntaxWarning, -1, "length bigger than vheaTab size");
+	    length = sizeof(vheaTab);
+	  }
 	  dumpString(vheaTab, length, outputFunc, outputStream);
 	} else if (needVerticalMetrics && i == t42VmtxTable) {
+	  if (unlikely(length > vmtxTabLength)) {
+	    error(errSyntaxWarning, -1, "length bigger than vmtxTab size");
+	    length = vmtxTabLength;
+	  }
 	  dumpString(vmtxTab, length, outputFunc, outputStream);
 	}
       }
@@ -1365,7 +1379,6 @@ void FoFiTrueType::parse() {
   if (seekTable("head") < 0 ||
       seekTable("hhea") < 0 ||
       seekTable("maxp") < 0 ||
-      seekTable("hmtx") < 0 ||
       (!openTypeCFF && seekTable("loca") < 0) ||
       (!openTypeCFF && seekTable("glyf") < 0) ||
       (openTypeCFF && seekTable("CFF ") < 0)) {
@@ -1421,7 +1434,7 @@ void FoFiTrueType::parse() {
 
 void FoFiTrueType::readPostTable() {
   GooString *name;
-  int tablePos, postFmt, stringIdx, stringPos;
+  int tablePos, postFmt, stringIdx, stringPos, savedStringIdx;
   GBool ok;
   int i, j, n, m;
 
@@ -1456,6 +1469,7 @@ void FoFiTrueType::readPostTable() {
 	nameToGID->removeInt(macGlyphNames[j]);
 	nameToGID->add(new GooString(macGlyphNames[j]), i);
       } else {
+	savedStringIdx = stringIdx;
 	j -= 258;
 	if (j != stringIdx) {
 	  for (stringIdx = 0, stringPos = tablePos + 34 + 2*n;
@@ -1467,13 +1481,21 @@ void FoFiTrueType::readPostTable() {
 	}
 	m = getU8(stringPos, &ok);
 	if (!ok || !checkRegion(stringPos + 1, m)) {
-	  goto err;
-	}
-	name = new GooString((char *)&file[stringPos + 1], m);
-	nameToGID->removeInt(name);
-	nameToGID->add(name, i);
-	++stringIdx;
-	stringPos += 1 + m;
+	  stringIdx = savedStringIdx;
+	  if (j < 258) {
+	    ok = gTrue;
+	    nameToGID->removeInt(macGlyphNames[j]);
+	    nameToGID->add(new GooString(macGlyphNames[0]), i);
+	  } else {
+	    goto err;
+	  }
+	} else {
+	  name = new GooString((char *)&file[stringPos + 1], m);
+	  nameToGID->removeInt(name);
+	  nameToGID->add(name, i);
+	  ++stringIdx;
+	  stringPos += 1 + m;
+        }
       }
     }
   } else if (postFmt == 0x00028000) {

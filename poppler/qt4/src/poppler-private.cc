@@ -1,6 +1,6 @@
 /* poppler-private.cc: qt interface to poppler
  * Copyright (C) 2005, Net Integration Technologies, Inc.
- * Copyright (C) 2006, 2011 by Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2006, 2011, 2015 by Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2008, 2010, 2011 by Pino Toscano <pino@kde.org>
  * Copyright (C) 2013 by Thomas Freitag <Thomas.Freitag@alfa.de>
  * Copyright (C) 2013 Adrian Johnson <ajohnson@redneon.com>
@@ -31,6 +31,7 @@
 
 #include <Link.h>
 #include <Outline.h>
+#include <PDFDocEncoding.h>
 #include <UnicodeMap.h>
 
 namespace Poppler {
@@ -100,36 +101,30 @@ namespace Debug {
         if ( !s1 || s1->getLength() == 0 )
             return QString();
 
-        GBool isUnicode;
-        int i;
-        Unicode u;
-        QString result;
+        char *cString;
+        int stringLength;
+        bool deleteCString;
         if ( ( s1->getChar(0) & 0xff ) == 0xfe && ( s1->getLength() > 1 && ( s1->getChar(1) & 0xff ) == 0xff ) )
         {
-            isUnicode = gTrue;
-            i = 2;
-            result.reserve( ( s1->getLength() - 2 ) / 2 );
+            cString = s1->getCString();
+            stringLength = s1->getLength();
+            deleteCString = false;
         }
         else
         {
-            isUnicode = gFalse;
-            i = 0;
-            result.reserve( s1->getLength() );
+            cString = pdfDocEncodingToUTF16(s1, &stringLength);
+            deleteCString = true;
         }
-        while ( i < s1->getLength() )
+
+        QString result;
+        // i = 2 to skip the unicode marker
+        for ( int i = 2; i < stringLength; i += 2 )
         {
-            if ( isUnicode )
-            {
-                u = ( ( s1->getChar(i) & 0xff ) << 8 ) | ( s1->getChar(i+1) & 0xff );
-                i += 2;
-            }
-            else
-            {
-                u = s1->getChar(i) & 0xff;
-                ++i;
-            }
+            const Unicode u = ( ( cString[i] & 0xff ) << 8 ) | ( cString[i+1] & 0xff );
             result += QChar( u );
         }
+        if (deleteCString)
+            delete[] cString;
         return result;
     }
 

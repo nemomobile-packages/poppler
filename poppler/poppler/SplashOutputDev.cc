@@ -15,14 +15,14 @@
 //
 // Copyright (C) 2005 Takashi Iwai <tiwai@suse.de>
 // Copyright (C) 2006 Stefan Schweizer <genstef@gentoo.org>
-// Copyright (C) 2006-2013 Albert Astals Cid <aacid@kde.org>
+// Copyright (C) 2006-2015 Albert Astals Cid <aacid@kde.org>
 // Copyright (C) 2006 Krzysztof Kowalczyk <kkowalczyk@gmail.com>
 // Copyright (C) 2006 Scott Turner <scotty1024@mac.com>
 // Copyright (C) 2007 Koji Otani <sho@bbr.jp>
 // Copyright (C) 2009 Petr Gajdos <pgajdos@novell.com>
-// Copyright (C) 2009-2013 Thomas Freitag <Thomas.Freitag@alfa.de>
+// Copyright (C) 2009-2015 Thomas Freitag <Thomas.Freitag@alfa.de>
 // Copyright (C) 2009 Carlos Garcia Campos <carlosgc@gnome.org>
-// Copyright (C) 2009 William Bader <williambader@hotmail.com>
+// Copyright (C) 2009, 2014, 2015 William Bader <williambader@hotmail.com>
 // Copyright (C) 2010 Patrick Spendrin <ps_ml@gmx.de>
 // Copyright (C) 2010 Brian Cameron <brian.cameron@oracle.com>
 // Copyright (C) 2010 Paweł Wiejacha <pawel.wiejacha@gmail.com>
@@ -32,6 +32,9 @@
 // Copyright (C) 2011, 2012 Adrian Johnson <ajohnson@redneon.com>
 // Copyright (C) 2013 Lu Wang <coolwanglu@gmail.com>
 // Copyright (C) 2013 Li Junling <lijunling@sina.com>
+// Copyright (C) 2014 Ed Porras <ed@moto-research.com>
+// Copyright (C) 2014 Richard PALO <richard@netbsd.org>
+// Copyright (C) 2015 Tamas Szekeres <szekerest@gmail.com>
 //
 // To see a description of the changes please see the Changelog file that
 // came with your tarball or type make ChangeLog if you are building from git
@@ -70,6 +73,7 @@
 #include "splash/SplashFontFileID.h"
 #include "splash/Splash.h"
 #include "SplashOutputDev.h"
+#include <algorithm>
 
 #ifdef VMS
 #if (__VMS_VER < 70000000)
@@ -84,7 +88,9 @@ extern "C" int unlink(char *filename);
 
 #ifdef __sun
 #include <ieeefp.h>
+#ifndef isfinite
 #define isfinite(x) finite(x)
+#endif
 #endif
 
 static inline void convertGfxColor(SplashColorPtr dest,
@@ -137,6 +143,61 @@ static inline void convertGfxColor(SplashColorPtr dest,
   splashColorCopy(dest, color);
 }
 
+// Copy a color according to the color mode.
+// Use convertGfxShortColor() below when the destination is a bitmap
+// to avoid overwriting cells.
+// Calling this in SplashGouraudPattern::getParameterizedColor() fixes bug 90570.
+// Use convertGfxColor() above when the destination is an array of SPOT_NCOMPS+4 bytes,
+// to ensure that everything is initialized.
+
+static inline void convertGfxShortColor(SplashColorPtr dest,
+                                   SplashColorMode colorMode,
+                                   GfxColorSpace *colorSpace,
+                                   GfxColor *src) {
+  switch (colorMode) {
+    case splashModeMono1:
+    case splashModeMono8:
+    {
+      GfxGray gray;
+      colorSpace->getGray(src, &gray);
+      dest[0] = colToByte(gray);
+    }
+    break;
+    case splashModeXBGR8:
+      dest[3] = 255;
+    case splashModeBGR8:
+    case splashModeRGB8:
+    {
+      GfxRGB rgb;
+      colorSpace->getRGB(src, &rgb);
+      dest[0] = colToByte(rgb.r);
+      dest[1] = colToByte(rgb.g);
+      dest[2] = colToByte(rgb.b);
+    }
+    break;
+#if SPLASH_CMYK
+    case splashModeCMYK8:
+    {
+      GfxCMYK cmyk;
+      colorSpace->getCMYK(src, &cmyk);
+      dest[0] = colToByte(cmyk.c);
+      dest[1] = colToByte(cmyk.m);
+      dest[2] = colToByte(cmyk.y);
+      dest[3] = colToByte(cmyk.k);
+    }
+    break;
+    case splashModeDeviceN8:
+    {
+      GfxColor deviceN;
+      colorSpace->getDeviceN(src, &deviceN);
+      for (int i = 0; i < SPOT_NCOMPS + 4; i++)
+        dest[i] = colToByte(deviceN.c[i]);
+    }
+    break;
+#endif
+  }
+}
+
 //------------------------------------------------------------------------
 // SplashGouraudPattern
 //------------------------------------------------------------------------
@@ -150,6 +211,7 @@ SplashGouraudPattern::SplashGouraudPattern(GBool bDirectColorTranslationA,
   bDirectColorTranslation = bDirectColorTranslationA;
   shadingA->getColorSpace()->getDefaultColor(&srcColor);
   convertGfxColor(defaultColor, mode, shadingA->getColorSpace(), &srcColor);
+  gfxMode = shadingA->getColorSpace()->getMode();
 }
 
 SplashGouraudPattern::~SplashGouraudPattern() {
@@ -172,7 +234,7 @@ void SplashGouraudPattern::getParameterizedColor(double colorinterp, SplashColor
     for (int m = 0; m < colorComps; ++m)
       dest[m] = colToByte(src.c[m]);
   } else {
-    convertGfxColor(dest, mode, srcColorSpace, &src);
+    convertGfxShortColor(dest, mode, srcColorSpace, &src);
   }
 }
 
@@ -198,6 +260,7 @@ SplashUnivariatePattern::SplashUnivariatePattern(SplashColorMode colorModeA, Gfx
 
   stateA->getUserClipBBox(&xMin, &yMin, &xMax, &yMax);
   shadingA->setupCache(&ctm, xMin, yMin, xMax, yMax);
+  gfxMode = shadingA->getColorSpace()->getMode();
 }
 
 SplashUnivariatePattern::~SplashUnivariatePattern() {
@@ -447,22 +510,26 @@ static void splashOutBlendMultiply(SplashColorPtr src, SplashColorPtr dest,
 
 #if SPLASH_CMYK
   if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
-    SplashColor rgbSrc;
-    SplashColor rgbDest;
-    SplashColor rgbBlend;
-    cmykToRGB(src, rgbSrc);
-    cmykToRGB(dest, rgbDest);
-    for (i = 0; i < 3; ++i) {
-      rgbBlend[i] = (rgbDest[i] * rgbSrc[i]) / 255;
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
     }
-    rgbToCMYK(rgbBlend, blend);
-  } else
+  }
 #endif
   {
     for (i = 0; i < splashColorModeNComps[cm]; ++i) {
       blend[i] = (dest[i] * src[i]) / 255;
     }
   }
+#if SPLASH_CMYK
+  if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
+      blend[i] = 255 - blend[i];
+    }
+  }
+#endif
 }
 
 static void splashOutBlendScreen(SplashColorPtr src, SplashColorPtr dest,
@@ -471,22 +538,26 @@ static void splashOutBlendScreen(SplashColorPtr src, SplashColorPtr dest,
 
 #if SPLASH_CMYK
   if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
-    SplashColor rgbSrc;
-    SplashColor rgbDest;
-    SplashColor rgbBlend;
-    cmykToRGB(src, rgbSrc);
-    cmykToRGB(dest, rgbDest);
-    for (i = 0; i < 3; ++i) {
-      rgbBlend[i] = rgbDest[i] + rgbSrc[i] - (rgbDest[i] * rgbSrc[i]) / 255;
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
     }
-    rgbToCMYK(rgbBlend, blend);
-  } else
+  }
 #endif
   {
     for (i = 0; i < splashColorModeNComps[cm]; ++i) {
       blend[i] = dest[i] + src[i] - (dest[i] * src[i]) / 255;
     }
   }
+#if SPLASH_CMYK
+  if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
+      blend[i] = 255 - blend[i];
+    }
+  }
+#endif
 }
 
 static void splashOutBlendOverlay(SplashColorPtr src, SplashColorPtr dest,
@@ -495,18 +566,11 @@ static void splashOutBlendOverlay(SplashColorPtr src, SplashColorPtr dest,
 
 #if SPLASH_CMYK
   if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
-    SplashColor rgbSrc;
-    SplashColor rgbDest;
-    SplashColor rgbBlend;
-    cmykToRGB(src, rgbSrc);
-    cmykToRGB(dest, rgbDest);
-    for (i = 0; i < 3; ++i) {
-      rgbBlend[i] = rgbDest[i] < 0x80
-                      ? (rgbSrc[i] * 2 * rgbDest[i]) / 255
-                      : 255 - 2 * ((255 - rgbSrc[i]) * (255 - rgbDest[i])) / 255;
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
     }
-    rgbToCMYK(rgbBlend, blend);
-  } else
+  }
 #endif
   {
     for (i = 0; i < splashColorModeNComps[cm]; ++i) {
@@ -515,6 +579,15 @@ static void splashOutBlendOverlay(SplashColorPtr src, SplashColorPtr dest,
                    : 255 - 2 * ((255 - src[i]) * (255 - dest[i])) / 255;
     }
   }
+#if SPLASH_CMYK
+  if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
+      blend[i] = 255 - blend[i];
+    }
+  }
+#endif
 }
 
 static void splashOutBlendDarken(SplashColorPtr src, SplashColorPtr dest,
@@ -523,22 +596,26 @@ static void splashOutBlendDarken(SplashColorPtr src, SplashColorPtr dest,
 
 #if SPLASH_CMYK
   if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
-    SplashColor rgbSrc;
-    SplashColor rgbDest;
-    SplashColor rgbBlend;
-    cmykToRGB(src, rgbSrc);
-    cmykToRGB(dest, rgbDest);
-    for (i = 0; i < 3; ++i) {
-      rgbBlend[i] = rgbDest[i] < rgbSrc[i] ? rgbDest[i] : rgbSrc[i];
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
     }
-    rgbToCMYK(rgbBlend, blend);
-  } else
+  }
 #endif
   {
     for (i = 0; i < splashColorModeNComps[cm]; ++i) {
       blend[i] = dest[i] < src[i] ? dest[i] : src[i];
     }
   }
+#if SPLASH_CMYK
+  if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
+      blend[i] = 255 - blend[i];
+    }
+  }
+#endif
 }
 
 static void splashOutBlendLighten(SplashColorPtr src, SplashColorPtr dest,
@@ -547,22 +624,26 @@ static void splashOutBlendLighten(SplashColorPtr src, SplashColorPtr dest,
 
 #if SPLASH_CMYK
   if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
-    SplashColor rgbSrc;
-    SplashColor rgbDest;
-    SplashColor rgbBlend;
-    cmykToRGB(src, rgbSrc);
-    cmykToRGB(dest, rgbDest);
-    for (i = 0; i < 3; ++i) {
-      rgbBlend[i] = rgbDest[i] > rgbSrc[i] ? rgbDest[i] : rgbSrc[i];
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
     }
-    rgbToCMYK(rgbBlend, blend);
-  } else
+  }
 #endif
   {
     for (i = 0; i < splashColorModeNComps[cm]; ++i) {
       blend[i] = dest[i] > src[i] ? dest[i] : src[i];
     }
   }
+#if SPLASH_CMYK
+  if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
+      blend[i] = 255 - blend[i];
+    }
+  }
+#endif
 }
 
 static void splashOutBlendColorDodge(SplashColorPtr src, SplashColorPtr dest,
@@ -572,21 +653,11 @@ static void splashOutBlendColorDodge(SplashColorPtr src, SplashColorPtr dest,
 
 #if SPLASH_CMYK
   if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
-    SplashColor rgbSrc;
-    SplashColor rgbDest;
-    SplashColor rgbBlend;
-    cmykToRGB(src, rgbSrc);
-    cmykToRGB(dest, rgbDest);
-    for (i = 0; i < 3; ++i) {
-      if (rgbSrc[i] == 255) {
-        rgbBlend[i] = 255;
-      } else {
-        x = (rgbDest[i] * 255) / (255 - rgbSrc[i]);
-        rgbBlend[i] = x <= 255 ? x : 255;
-      }
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
     }
-    rgbToCMYK(rgbBlend, blend);
-  } else
+  }
 #endif
   {
     for (i = 0; i < splashColorModeNComps[cm]; ++i) {
@@ -598,6 +669,15 @@ static void splashOutBlendColorDodge(SplashColorPtr src, SplashColorPtr dest,
       }
     }
   }
+#if SPLASH_CMYK
+  if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
+      blend[i] = 255 - blend[i];
+    }
+  }
+#endif
 }
 
 static void splashOutBlendColorBurn(SplashColorPtr src, SplashColorPtr dest,
@@ -606,21 +686,11 @@ static void splashOutBlendColorBurn(SplashColorPtr src, SplashColorPtr dest,
 
 #if SPLASH_CMYK
   if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
-    SplashColor rgbSrc;
-    SplashColor rgbDest;
-    SplashColor rgbBlend;
-    cmykToRGB(src, rgbSrc);
-    cmykToRGB(dest, rgbDest);
-    for (i = 0; i < 3; ++i) {
-      if (rgbSrc[i] == 0) {
-        rgbBlend[i] = 0;
-      } else {
-        x = ((255 - rgbDest[i]) * 255) / rgbSrc[i];
-        rgbBlend[i] = x <= 255 ? 255 - x : 0;
-      }
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
     }
-    rgbToCMYK(rgbBlend, blend);
-  } else
+  }
 #endif
   {
     for (i = 0; i < splashColorModeNComps[cm]; ++i) {
@@ -632,6 +702,15 @@ static void splashOutBlendColorBurn(SplashColorPtr src, SplashColorPtr dest,
       }
     }
   }
+#if SPLASH_CMYK
+  if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
+      blend[i] = 255 - blend[i];
+    }
+  }
+#endif
 }
 
 static void splashOutBlendHardLight(SplashColorPtr src, SplashColorPtr dest,
@@ -640,18 +719,11 @@ static void splashOutBlendHardLight(SplashColorPtr src, SplashColorPtr dest,
 
 #if SPLASH_CMYK
   if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
-    SplashColor rgbSrc;
-    SplashColor rgbDest;
-    SplashColor rgbBlend;
-    cmykToRGB(src, rgbSrc);
-    cmykToRGB(dest, rgbDest);
-    for (i = 0; i < 3; ++i) {
-      rgbBlend[i] = rgbSrc[i] < 0x80
-                      ? (rgbDest[i] * 2 * rgbSrc[i]) / 255
-                      : 255 - 2 * ((255 - rgbDest[i]) * (255 - rgbSrc[i])) / 255;
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
     }
-    rgbToCMYK(rgbBlend, blend);
-  } else
+  }
 #endif
   {
     for (i = 0; i < splashColorModeNComps[cm]; ++i) {
@@ -660,6 +732,15 @@ static void splashOutBlendHardLight(SplashColorPtr src, SplashColorPtr dest,
                    : 255 - 2 * ((255 - dest[i]) * (255 - src[i])) / 255;
     }
   }
+#if SPLASH_CMYK
+  if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
+      blend[i] = 255 - blend[i];
+    }
+  }
+#endif
 }
 
 static void splashOutBlendSoftLight(SplashColorPtr src, SplashColorPtr dest,
@@ -668,25 +749,11 @@ static void splashOutBlendSoftLight(SplashColorPtr src, SplashColorPtr dest,
 
 #if SPLASH_CMYK
   if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
-    SplashColor rgbSrc;
-    SplashColor rgbDest;
-    SplashColor rgbBlend;
-    cmykToRGB(src, rgbSrc);
-    cmykToRGB(dest, rgbDest);
-    for (i = 0; i < 3; ++i) {
-      if (rgbSrc[i] < 0x80) {
-        rgbBlend[i] = rgbDest[i] - (255 - 2 * rgbSrc[i]) * rgbDest[i] * (255 - rgbDest[i]) / (255 * 255);
-      } else {
-        if (rgbDest[i] < 0x40) {
-          x = (((((16 * rgbDest[i] - 12 * 255) * rgbDest[i]) / 255) + 4 * 255) * rgbDest[i]) / 255;
-        } else {
-          x = (int)sqrt(255.0 * rgbDest[i]);
-        }
-        rgbBlend[i] = rgbDest[i] + (2 * rgbSrc[i] - 255) * (x - rgbDest[i]) / 255;
-      }
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
     }
-    rgbToCMYK(rgbBlend, blend);
-  } else
+  }
 #endif
   {
     for (i = 0; i < splashColorModeNComps[cm]; ++i) {
@@ -702,6 +769,15 @@ static void splashOutBlendSoftLight(SplashColorPtr src, SplashColorPtr dest,
       }
     }
   }
+#if SPLASH_CMYK
+  if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
+      blend[i] = 255 - blend[i];
+    }
+  }
+#endif
 }
 
 static void splashOutBlendDifference(SplashColorPtr src, SplashColorPtr dest,
@@ -711,22 +787,32 @@ static void splashOutBlendDifference(SplashColorPtr src, SplashColorPtr dest,
 
 #if SPLASH_CMYK
   if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
-    SplashColor rgbSrc;
-    SplashColor rgbDest;
-    SplashColor rgbBlend;
-    cmykToRGB(src, rgbSrc);
-    cmykToRGB(dest, rgbDest);
-    for (i = 0; i < 3; ++i) {
-      rgbBlend[i] = rgbDest[i] < rgbSrc[i] ? rgbSrc[i] - rgbDest[i] : rgbDest[i] - rgbSrc[i];
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
     }
-    rgbToCMYK(rgbBlend, blend);
-  } else
+  }
 #endif
   {
     for (i = 0; i < splashColorModeNComps[cm]; ++i) {
       blend[i] = dest[i] < src[i] ? src[i] - dest[i] : dest[i] - src[i];
     }
   }
+#if SPLASH_CMYK
+  if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
+      blend[i] = 255 - blend[i];
+    }
+  }
+  if (cm == splashModeDeviceN8) {
+    for (i = 4; i < splashColorModeNComps[cm]; ++i) {
+      if (dest[i] == 0 && src[i] == 0)
+        blend[i] = 0;
+    }
+  }
+#endif
 }
 
 static void splashOutBlendExclusion(SplashColorPtr src, SplashColorPtr dest,
@@ -735,22 +821,32 @@ static void splashOutBlendExclusion(SplashColorPtr src, SplashColorPtr dest,
 
 #if SPLASH_CMYK
   if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
-    SplashColor rgbSrc;
-    SplashColor rgbDest;
-    SplashColor rgbBlend;
-    cmykToRGB(src, rgbSrc);
-    cmykToRGB(dest, rgbDest);
-    for (i = 0; i < 3; ++i) {
-      rgbBlend[i] = rgbDest[i] + rgbSrc[i] - (2 * rgbDest[i] * rgbSrc[i]) / 255;
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
     }
-    rgbToCMYK(rgbBlend, blend);
-  } else
+  }
 #endif
   {
     for (i = 0; i < splashColorModeNComps[cm]; ++i) {
       blend[i] = dest[i] + src[i] - (2 * dest[i] * src[i]) / 255;
     }
   }
+#if SPLASH_CMYK
+  if (cm == splashModeCMYK8 || cm == splashModeDeviceN8) {
+    for (i = 0; i < splashColorModeNComps[cm]; ++i) {
+      dest[i] = 255 - dest[i];
+      src[i] = 255 - src[i];
+      blend[i] = 255 - blend[i];
+    }
+  }
+  if (cm == splashModeDeviceN8) {
+    for (i = 4; i < splashColorModeNComps[cm]; ++i) {
+      if (dest[i] == 0 && src[i] == 0)
+        blend[i] = 0;
+    }
+  }
+#endif
 }
 
 static int getLum(int r, int g, int b) {
@@ -847,7 +943,7 @@ static void setSat(Guchar rIn, Guchar gIn, Guchar bIn, int sat,
 static void splashOutBlendHue(SplashColorPtr src, SplashColorPtr dest,
 			      SplashColorPtr blend, SplashColorMode cm) {
   Guchar r0, g0, b0;
-#ifdef SPLASH_CMYK
+#if SPLASH_CMYK
   Guchar r1, g1, b1;
   int i;
   SplashColor src2, dest2;
@@ -897,7 +993,7 @@ static void splashOutBlendSaturation(SplashColorPtr src, SplashColorPtr dest,
 				     SplashColorPtr blend,
 				     SplashColorMode cm) {
   Guchar r0, g0, b0;
-#ifdef SPLASH_CMYK
+#if SPLASH_CMYK
   Guchar r1, g1, b1;
   int i;
   SplashColor src2, dest2;
@@ -1188,6 +1284,7 @@ struct T3GlyphStack {
 struct SplashTransparencyGroup {
   int tx, ty;			// translation coordinates
   SplashBitmap *tBitmap;	// bitmap for transparency group
+  SplashBitmap *softmask;	// bitmap for softmasks
   GfxColorSpace *blendingColorSpace;
   GBool isolated;
 
@@ -1195,6 +1292,7 @@ struct SplashTransparencyGroup {
   SplashBitmap *shape;
   GBool knockout;
   SplashCoord knockoutOpacity;
+  GBool fontAA;
 
   //----- saved state
   SplashBitmap *origBitmap;
@@ -1212,17 +1310,14 @@ SplashOutputDev::SplashOutputDev(SplashColorMode colorModeA,
 				 GBool reverseVideoA,
 				 SplashColorPtr paperColorA,
 				 GBool bitmapTopDownA,
-				 GBool allowAntialiasA, 
-         SplashThinLineMode thinLineMode,
-         GBool overprintPreviewA) {
+				 SplashThinLineMode thinLineMode,
+				 GBool overprintPreviewA) {
   colorMode = colorModeA;
   bitmapRowPad = bitmapRowPadA;
   bitmapTopDown = bitmapTopDownA;
   bitmapUpsideDown = gFalse;
-  allowAntialias = allowAntialiasA;
-  vectorAntialias = allowAntialias &&
-		      globalParams->getVectorAntialias() &&
-		      colorMode != splashModeMono1;
+  fontAntialias = gTrue;
+  vectorAntialias = gTrue;
   overprintPreview = overprintPreviewA;
   enableFreeTypeHinting = gFalse;
   enableSlightHinting = gFalse;
@@ -1343,8 +1438,7 @@ void SplashOutputDev::startDoc(PDFDoc *docA) {
 				    enableFreeTypeHinting,
 				    enableSlightHinting,
 #endif
-				    allowAntialias &&
-				      globalParams->getAntialias() &&
+				      getFontAntialias() &&
 				      colorMode != splashModeMono1);
   for (i = 0; i < nT3Fonts; ++i) {
     delete t3FontCache[i];
@@ -1857,7 +1951,7 @@ void SplashOutputDev::doUpdateFont(GfxState *state) {
 
   } else {
 
-    if (!(fontLoc = gfxFont->locateFont((xref) ? xref : doc->getXRef(), gFalse))) {
+    if (!(fontLoc = gfxFont->locateFont((xref) ? xref : doc->getXRef(), NULL))) {
       error(errSyntaxError, -1, "Couldn't find a font for '{0:s}'",
 	    gfxFont->getName() ? gfxFont->getName()->getCString()
 	                       : "(unnamed)");
@@ -2693,11 +2787,9 @@ void SplashOutputDev::drawImageMask(GfxState *state, Object *ref, Stream *str,
 
   splash->fillImageMask(&imageMaskSrc, &imgMaskData, width, height, mat, t3GlyphStack != NULL);
   if (inlineImg) {
-    if (inlineImg) {
-      while (imgMaskData.y < height) {
-        imgMaskData.imgStr->getLine();
-        ++imgMaskData.y;
-      }
+    while (imgMaskData.y < height) {
+      imgMaskData.imgStr->getLine();
+      ++imgMaskData.y;
     }
   }
 
@@ -2744,8 +2836,8 @@ void SplashOutputDev::setSoftMaskFromImageMask(GfxState *state,
   imgMaskData.height = height;
   imgMaskData.y = 0;
 
-  maskBitmap = new SplashBitmap(bitmap->getWidth(), bitmap->getHeight(), 1, splashModeMono8, gFalse);
-  maskSplash = new Splash(maskBitmap, vectorAntialias);
+  transpGroupStack->softmask = new SplashBitmap(bitmap->getWidth(), bitmap->getHeight(), 1, splashModeMono8, gFalse);
+  maskSplash = new Splash(transpGroupStack->softmask, vectorAntialias);
   maskColor[0] = 0;
   maskSplash->clear(maskColor);
   maskColor[0] = 0xff;
@@ -2762,13 +2854,15 @@ void SplashOutputDev::unsetSoftMaskFromImageMask(GfxState *state, double *baseMa
   /* transfer mask to alpha channel! */
   // memcpy(maskBitmap->getAlphaPtr(), maskBitmap->getDataPtr(), bitmap->getRowSize() * bitmap->getHeight());
   // memset(maskBitmap->getDataPtr(), 0, bitmap->getRowSize() * bitmap->getHeight());
-  Guchar *dest = bitmap->getAlphaPtr();
-  Guchar *src = maskBitmap->getDataPtr();
-  for (int c= 0; c < maskBitmap->getRowSize() * maskBitmap->getHeight(); c++) {
-    dest[c] = src[c];
+  if (transpGroupStack->softmask != NULL) {
+    Guchar *dest = bitmap->getAlphaPtr();
+    Guchar *src = transpGroupStack->softmask->getDataPtr();
+    for (int c= 0; c < transpGroupStack->softmask->getRowSize() * transpGroupStack->softmask->getHeight(); c++) {
+      dest[c] = src[c];
+    }
+    delete transpGroupStack->softmask;
+    transpGroupStack->softmask = NULL;
   }
-  delete maskBitmap;
-  maskBitmap = NULL;
   endTransparencyGroup(state);
   baseMatrix[4] += transpGroupStack->tx;
   baseMatrix[5] += transpGroupStack->ty;
@@ -2783,6 +2877,37 @@ struct SplashOutImageData {
   SplashColorMode colorMode;
   int width, height, y;
 };
+
+#ifdef USE_CMS
+GBool SplashOutputDev::useIccImageSrc(void *data) {
+  SplashOutImageData *imgData = (SplashOutImageData *)data;
+
+  if (!imgData->lookup && imgData->colorMap->getColorSpace()->getMode() == csICCBased) {
+    GfxICCBasedColorSpace *colorSpace = (GfxICCBasedColorSpace *) imgData->colorMap->getColorSpace();
+    switch (imgData->colorMode) {
+    case splashModeMono1:
+    case splashModeMono8:
+      if (colorSpace->getAlt() != NULL && colorSpace->getAlt()->getMode() == csDeviceGray)
+        return gTrue;
+      break;
+    case splashModeXBGR8:
+    case splashModeRGB8:
+    case splashModeBGR8:
+      if (colorSpace->getAlt() != NULL && colorSpace->getAlt()->getMode() == csDeviceRGB)
+        return gTrue;
+      break;
+#if SPLASH_CMYK
+    case splashModeCMYK8:
+      if (colorSpace->getAlt() != NULL && colorSpace->getAlt()->getMode() == csDeviceCMYK)
+        return gTrue;
+      break;
+#endif
+    }
+  }
+
+  return gFalse;
+}
+#endif
 
 GBool SplashOutputDev::imageSrc(void *data, SplashColorPtr colorLine,
 				Guchar * /*alphaLine*/) {
@@ -2801,6 +2926,18 @@ GBool SplashOutputDev::imageSrc(void *data, SplashColorPtr colorLine,
     return gFalse;
   }
   if (!(p = imgData->imgStr->getLine())) {
+    int destComps = 1;
+    if (imgData->colorMode == splashModeRGB8 || imgData->colorMode == splashModeBGR8)
+        destComps = 3;
+    else if (imgData->colorMode == splashModeXBGR8)
+        destComps = 4;
+#if SPLASH_CMYK
+    else if (imgData->colorMode == splashModeCMYK8)
+        destComps = 4;
+    else if (imgData->colorMode == splashModeDeviceN8)
+        destComps = SPOT_NCOMPS + 4;
+#endif
+    memset(colorLine, 0, imgData->width * destComps);
     return gFalse;
   }
 
@@ -2888,19 +3025,27 @@ GBool SplashOutputDev::imageSrc(void *data, SplashColorPtr colorLine,
       break;
 #if SPLASH_CMYK
     case splashModeCMYK8:
-      for (x = 0, q = colorLine; x < imgData->width; ++x, p += nComps) {
-	imgData->colorMap->getCMYK(p, &cmyk);
-	*q++ = colToByte(cmyk.c);
-	*q++ = colToByte(cmyk.m);
-	*q++ = colToByte(cmyk.y);
-	*q++ = colToByte(cmyk.k);
+      if (imgData->colorMap->useCMYKLine()) {
+	imgData->colorMap->getCMYKLine(p, (Guchar *) colorLine, imgData->width);
+      } else {
+	for (x = 0, q = colorLine; x < imgData->width; ++x, p += nComps) {
+	  imgData->colorMap->getCMYK(p, &cmyk);
+	  *q++ = colToByte(cmyk.c);
+	  *q++ = colToByte(cmyk.m);
+	  *q++ = colToByte(cmyk.y);
+	  *q++ = colToByte(cmyk.k);
+	}
       }
       break;
     case splashModeDeviceN8:
-      for (x = 0, q = colorLine; x < imgData->width; ++x, p += nComps) {
-	imgData->colorMap->getDeviceN(p, &deviceN);
-  for (int cp = 0; cp < SPOT_NCOMPS+4; cp++)
-    *q++ = colToByte(deviceN.c[cp]);
+      if (imgData->colorMap->useDeviceNLine()) {
+	imgData->colorMap->getDeviceNLine(p, (Guchar *) colorLine, imgData->width);
+      } else {
+        for (x = 0, q = colorLine; x < imgData->width; ++x, p += nComps) {
+	  imgData->colorMap->getDeviceN(p, &deviceN);
+          for (int cp = 0; cp < SPOT_NCOMPS+4; cp++)
+            *q++ = colToByte(deviceN.c[cp]);
+	}
       }
       break;
 #endif
@@ -2910,6 +3055,100 @@ GBool SplashOutputDev::imageSrc(void *data, SplashColorPtr colorLine,
   ++imgData->y;
   return gTrue;
 }
+
+#ifdef USE_CMS
+GBool SplashOutputDev::iccImageSrc(void *data, SplashColorPtr colorLine,
+				Guchar * /*alphaLine*/) {
+  SplashOutImageData *imgData = (SplashOutImageData *)data;
+  Guchar *p;
+  int nComps;
+
+  if (imgData->y == imgData->height) {
+    return gFalse;
+  }
+  if (!(p = imgData->imgStr->getLine())) {
+    int destComps = 1;
+    if (imgData->colorMode == splashModeRGB8 || imgData->colorMode == splashModeBGR8)
+        destComps = 3;
+    else if (imgData->colorMode == splashModeXBGR8)
+        destComps = 4;
+#if SPLASH_CMYK
+    else if (imgData->colorMode == splashModeCMYK8)
+        destComps = 4;
+    else if (imgData->colorMode == splashModeDeviceN8)
+        destComps = SPOT_NCOMPS + 4;
+#endif
+    memset(colorLine, 0, imgData->width * destComps);
+    return gFalse;
+  }
+
+  if (imgData->colorMode == splashModeXBGR8) {
+    SplashColorPtr q;
+    int x;
+    for (x = 0, q = colorLine; x < imgData->width; ++x) {
+      *q++ = *p++;
+      *q++ = *p++;
+      *q++ = *p++;
+      *q++ = 255;
+    }
+  } else {
+    nComps = imgData->colorMap->getNumPixelComps();
+    memcpy(colorLine, p, imgData->width * nComps);
+  }
+
+  ++imgData->y;
+  return gTrue;
+}
+
+void SplashOutputDev::iccTransform(void *data, SplashBitmap *bitmap) {
+  SplashOutImageData *imgData = (SplashOutImageData *)data;
+  int nComps = imgData->colorMap->getNumPixelComps();
+
+  Guchar *colorLine = (Guchar *) gmalloc(nComps * bitmap->getWidth());
+  Guchar *rgbxLine = (imgData->colorMode == splashModeXBGR8) ? (Guchar *) gmalloc(3 * bitmap->getWidth()) : NULL;
+  for (int i = 0; i < bitmap->getHeight(); i++) {
+    Guchar *p = bitmap->getDataPtr() + i * bitmap->getRowSize();
+    switch (imgData->colorMode) {
+    case splashModeMono1:
+    case splashModeMono8:
+      imgData->colorMap->getGrayLine(p, colorLine, bitmap->getWidth());
+      memcpy(p, colorLine, nComps * bitmap->getWidth());
+      break;
+    case splashModeRGB8:
+    case splashModeBGR8:
+      imgData->colorMap->getRGBLine(p, colorLine, bitmap->getWidth());
+      memcpy(p, colorLine, nComps * bitmap->getWidth());
+      break;
+#if SPLASH_CMYK
+    case splashModeCMYK8:
+      imgData->colorMap->getCMYKLine(p, colorLine, bitmap->getWidth());
+      memcpy(p, colorLine, nComps * bitmap->getWidth());
+      break;
+#endif
+    case splashModeXBGR8:
+      Guchar *q;
+      Guchar *b = p;
+      int x;
+      for (x = 0, q = rgbxLine; x < bitmap->getWidth(); ++x, ++b) {
+        *q++ = *b++;
+        *q++ = *b++;
+        *q++ = *b++;
+      }
+      imgData->colorMap->getRGBLine(rgbxLine, colorLine, bitmap->getWidth());
+      b = p;
+      for (x = 0, q = colorLine; x < bitmap->getWidth(); ++x, ++b) {
+        *b++ = *q++;
+        *b++ = *q++;
+        *b++ = *q++;
+      }
+      break;
+    }
+  }
+  gfree(colorLine);
+  if (rgbxLine != NULL) 
+    gfree(rgbxLine);
+}
+#endif
 
 GBool SplashOutputDev::alphaImageSrc(void *data, SplashColorPtr colorLine,
 				     Guchar *alphaLine) {
@@ -3122,6 +3361,7 @@ void SplashOutputDev::drawImage(GfxState *state, Object *ref, Stream *str,
   SplashOutImageData imgData;
   SplashColorMode srcMode;
   SplashImageSource src;
+  SplashICCTransform tf;
   GfxGray gray;
   GfxRGB rgb;
 #if SPLASH_CMYK
@@ -3239,8 +3479,14 @@ void SplashOutputDev::drawImage(GfxState *state, Object *ref, Stream *str,
   } else {
     srcMode = colorMode;
   }
+#ifdef USE_CMS
+  src = maskColors ? &alphaImageSrc : useIccImageSrc(&imgData) ? &iccImageSrc : &imageSrc;
+  tf = maskColors == NULL && useIccImageSrc(&imgData) ? &iccTransform : NULL;
+#else
   src = maskColors ? &alphaImageSrc : &imageSrc;
-  splash->drawImage(src, &imgData, srcMode, maskColors ? gTrue : gFalse,
+  tf = NULL;
+#endif
+  splash->drawImage(src, tf, &imgData, srcMode, maskColors ? gTrue : gFalse,
 		    width, height, mat, interpolate);
   if (inlineImg) {
     while (imgData.y < height) {
@@ -3542,7 +3788,7 @@ void SplashOutputDev::drawMaskedImage(GfxState *state, Object *ref,
     } else {
       srcMode = colorMode;
     }
-    splash->drawImage(&maskedImageSrc, &imgData, srcMode, gTrue,
+    splash->drawImage(&maskedImageSrc, NULL, &imgData, srcMode, gTrue,
 		      width, height, mat, interpolate);
     delete maskBitmap;
     gfree(imgData.lookup);
@@ -3617,7 +3863,7 @@ void SplashOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref,
   maskSplash = new Splash(maskBitmap, vectorAntialias);
   maskColor[0] = 0;
   maskSplash->clear(maskColor);
-  maskSplash->drawImage(&imageSrc, &imgMaskData, splashModeMono8, gFalse,
+  maskSplash->drawImage(&imageSrc, NULL, &imgMaskData, splashModeMono8, gFalse,
 			maskWidth, maskHeight, mat, maskInterpolate);
   delete imgMaskData.imgStr;
   maskStr->close();
@@ -3705,7 +3951,7 @@ void SplashOutputDev::drawSoftMaskedImage(GfxState *state, Object *ref,
   } else {
     srcMode = colorMode;
   }
-  splash->drawImage(&imageSrc, &imgData, srcMode, gFalse, width, height, mat, interpolate);
+  splash->drawImage(&imageSrc, NULL, &imgData, srcMode, gFalse, width, height, mat, interpolate);
   splash->setSoftMask(NULL);
   gfree(imgData.lookup);
   delete imgData.imgStr;
@@ -3798,12 +4044,13 @@ void SplashOutputDev::beginTransparencyGroup(GfxState *state, double *bbox,
 
   // push a new stack entry
   transpGroup = new SplashTransparencyGroup();
+  transpGroup->softmask = NULL;
   transpGroup->tx = tx;
   transpGroup->ty = ty;
   transpGroup->blendingColorSpace = blendingColorSpace;
   transpGroup->isolated = isolated;
   transpGroup->shape = (knockout && !isolated) ? SplashBitmap::copy(bitmap) : NULL;
-  transpGroup->knockout = gFalse; 
+  transpGroup->knockout = (knockout && isolated);
   transpGroup->knockoutOpacity = 1.0;
   transpGroup->next = transpGroupStack;
   transpGroupStack = transpGroup;
@@ -3811,6 +4058,7 @@ void SplashOutputDev::beginTransparencyGroup(GfxState *state, double *bbox,
   // save state
   transpGroup->origBitmap = bitmap;
   transpGroup->origSplash = splash;
+  transpGroup->fontAA = fontEngine->getAA();
 
   //~ this handles the blendingColorSpace arg for soft masks, but
   //~   not yet for transparency groups
@@ -3842,6 +4090,9 @@ void SplashOutputDev::beginTransparencyGroup(GfxState *state, double *bbox,
 			    bitmapTopDown, bitmap->getSeparationList());
   splash = new Splash(bitmap, vectorAntialias,
 		      transpGroup->origSplash->getScreen());
+  if (transpGroup->next != NULL && transpGroup->next->knockout) {
+    fontEngine->setAA(gFalse);
+  }
   splash->setThinLineMode(transpGroup->origSplash->getThinLineMode());
   splash->setMinLineWidth(globalParams->getMinLineWidth());
   //~ Acrobat apparently copies at least the fill and stroke colors, and
@@ -3860,8 +4111,12 @@ void SplashOutputDev::beginTransparencyGroup(GfxState *state, double *bbox,
   } else {
     SplashBitmap *shape = (knockout) ? transpGroup->shape :
                                        (transpGroup->next != NULL && transpGroup->next->shape != NULL) ? transpGroup->next->shape : transpGroup->origBitmap;
+    int shapeTx = (knockout) ? tx :
+      (transpGroup->next != NULL && transpGroup->next->shape != NULL) ? transpGroup->next->tx + tx : tx;
+    int shapeTy = (knockout) ? ty :
+      (transpGroup->next != NULL && transpGroup->next->shape != NULL) ? transpGroup->next->ty + ty : ty;
     splash->blitTransparent(transpGroup->origBitmap, tx, ty, 0, 0, w, h);
-    splash->setInNonIsolatedGroup(shape, tx, ty);
+    splash->setInNonIsolatedGroup(shape, shapeTx, shapeTy);
   }
   transpGroup->tBitmap = bitmap;
   state->shiftCTMAndClip(-tx, -ty);
@@ -3898,8 +4153,9 @@ void SplashOutputDev::paintTransparencyGroup(GfxState *state, double *bbox) {
                                                                    : transpGroupStack->knockoutOpacity;
     splash->setOverprintMask(0xffffffff, gFalse);
     splash->composite(tBitmap, 0, 0, tx, ty,
-	      tBitmap->getWidth(), tBitmap->getHeight(),
-	      gFalse, !isolated, transpGroupStack->next != NULL && transpGroupStack->next->knockout, knockoutOpacity);
+      tBitmap->getWidth(), tBitmap->getHeight(),
+      gFalse, !isolated, transpGroupStack->next != NULL && transpGroupStack->next->knockout, knockoutOpacity);
+    fontEngine->setAA(transpGroupStack->fontAA);
     if (transpGroupStack->next != NULL && transpGroupStack->next->shape != NULL) {
       transpGroupStack->next->knockout = gTrue;
     }
@@ -3997,8 +4253,8 @@ void SplashOutputDev::setSoftMask(GfxState *state, double *bbox,
   p = softMask->getDataPtr() + ty * softMask->getRowSize() + tx;
   int xMax = tBitmap->getWidth();
   int yMax = tBitmap->getHeight();
-  if (xMax + tx > bitmap->getWidth()) xMax = bitmap->getWidth() - tx;
-  if (yMax + ty > bitmap->getHeight()) yMax = bitmap->getHeight() - ty;
+  if (xMax > bitmap->getWidth() - tx) xMax = bitmap->getWidth() - tx;
+  if (yMax > bitmap->getHeight() - ty) yMax = bitmap->getHeight() - ty;
   for (y = 0; y < yMax; ++y) {
     for (x = 0; x < xMax; ++x) {
       if (alpha) {
@@ -4096,6 +4352,7 @@ GBool SplashOutputDev::getVectorAntialias() {
 }
 
 void SplashOutputDev::setVectorAntialias(GBool vaa) {
+  vaa = vaa && colorMode != splashModeMono1;
   vectorAntialias = vaa;
   splash->setVectorAntialias(vaa);
 }
@@ -4294,7 +4551,7 @@ GBool SplashOutputDev::tilingPatternFill(GfxState *state, Gfx *gfxA, Catalog *ca
     }
     retValue = gTrue;
   } else {
-    retValue = splash->drawImage(&tilingBitmapSrc, &imgData, colorMode, gTrue, result_width, result_height, matc, gFalse, gTrue) == splashOk;
+    retValue = splash->drawImage(&tilingBitmapSrc, NULL, &imgData, colorMode, gTrue, result_width, result_height, matc, gFalse, gTrue) == splashOk;
   }
   delete tBitmap;
   delete gfx;
@@ -4312,7 +4569,7 @@ GBool SplashOutputDev::gouraudTriangleShadedFill(GfxState *state, GfxGouraudTria
 #if SPLASH_CMYK
     case splashModeCMYK8:
     case splashModeDeviceN8:
-      bDirectColorTranslation = (shadingMode == csDeviceCMYK || shadingMode == csDeviceN);
+      bDirectColorTranslation = (shadingMode == csDeviceCMYK);
     break;
 #endif
     default:
@@ -4328,6 +4585,7 @@ GBool SplashOutputDev::gouraudTriangleShadedFill(GfxState *state, GfxGouraudTria
     setVectorAntialias(vaa);
     return retVal;
   }
+  delete splashShading;
   return gFalse;
 }
 
@@ -4386,7 +4644,7 @@ GBool SplashOutputDev::univariateShadedFill(GfxState *state, SplashUnivariatePat
   pattern->getShading()->getColorSpace()->createMapping(bitmap->getSeparationList(), SPOT_NCOMPS);
 #endif
   setOverprintMask(pattern->getShading()->getColorSpace(), state->getFillOverprint(),
-		   state->getOverprintMode(), state->getFillColor());
+		   state->getOverprintMode(), NULL);
   retVal = (splash->shadedFill(path, pattern->getShading()->getHasBBox(), pattern) == splashOk);
   state->clearPath();
   setVectorAntialias(vaa);

@@ -1,10 +1,11 @@
 /* poppler-ps-converter.cc: qt interface to poppler
- * Copyright (C) 2007, 2009, 2010, Albert Astals Cid <aacid@kde.org>
+ * Copyright (C) 2007, 2009, 2010, 2015, Albert Astals Cid <aacid@kde.org>
  * Copyright (C) 2008, Pino Toscano <pino@kde.org>
  * Copyright (C) 2010 Hib Eris <hib@hiberis.nl>
  * Copyright (C) 2011 Glad Deschrijver <glad.deschrijver@gmail.com>
  * Copyright (C) 2012 Fabio D'Urso <fabiodurso@hotmail.it>
  * Copyright (C) 2013 Thomas Freitag <Thomas.Freitag@alfa.de>
+ * Copyright (C) 2014 Adrian Johnson <ajohnson@redneon.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -215,14 +216,20 @@ bool PSConverter::convert()
 	if (!d->title.isEmpty()) pstitlechar = pstitle8Bit.data();
 	else pstitlechar = 0;
 	
+	std::vector<int> pages;
+	foreach(int page, d->pageList)
+	{
+		pages.push_back(page);
+	}
+
 	PSOutputDev *psOut = new PSOutputDev(outputToQIODevice, dev,
 	                                     pstitlechar,
 	                                     d->document->doc,
-	                                     1,
-	                                     d->document->doc->getNumPages(),
+	                                     pages,
 	                                     (d->opts & PrintToEPS) ? psModeEPS : psModePS,
 	                                     d->paperWidth,
 	                                     d->paperHeight,
+	                                     gFalse,
 	                                     gFalse,
 	                                     d->marginLeft,
 	                                     d->marginBottom,
