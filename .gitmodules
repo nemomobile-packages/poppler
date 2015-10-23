@@ -1,3 +1,0 @@
-[submodule "upstream"]
-	path = upstream
-	url = git://git.freedesktop.org/git/poppler/poppler
